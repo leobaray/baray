@@ -1,0 +1,146 @@
+import 'package:uuid/uuid.dart';
+
+import 'db.dart';
+
+/// Agendador automático — substituto do Módulo6 da planilha.
+///
+/// Escolhe a data (ou sequência de datas) em que um pedido entra em produção,
+/// respeitando o limite diário em R\$ e pulando fim de semana conforme config.
+class Agendador {
+  final Db db;
+  Agendador(this.db);
+
+  DateTime agendar({
+    required String pedidoId,
+    required double valor,
+    DateTime? dataChegada,
+    bool ignorarFixacao = false,
+  }) {
+    final limite = db.configNumber('limite_diario', 1200);
+    final sabado = db.configBool('producao_sabado', false);
+    final domingo = db.configBool('producao_domingo', false);
+
+    db.raw.execute('DELETE FROM pedido_distribuicao WHERE pedido_id = ?', [pedidoId]);
+
+    var cursor = _diaInicio(dataChegada ?? DateTime.now());
+    cursor = _proximoDiaUtil(cursor, sabado: sabado, domingo: domingo);
+
+    final distribuicao = <MapEntry<DateTime, double>>[];
+    var restante = valor;
+
+    final jaAgendado = _ocupacaoPorDia(pedidoId);
+
+    var guard = 0;
+    while (restante > 0.0001) {
+      if (guard++ > 365) {
+        throw StateError('Agendamento estourou 1 ano — bug ou config errada.');
+      }
+      final chave = _chaveDia(cursor);
+      final ocupado = jaAgendado[chave] ?? 0;
+      final livre = (limite - ocupado).clamp(0, double.infinity).toDouble();
+      if (livre <= 0.0001) {
+        cursor = _proximoDiaUtil(cursor.add(const Duration(days: 1)), sabado: sabado, domingo: domingo);
+        continue;
+      }
+      final parcela = restante <= livre ? restante : livre;
+      distribuicao.add(MapEntry(cursor, parcela));
+      restante -= parcela;
+      cursor = _proximoDiaUtil(cursor.add(const Duration(days: 1)), sabado: sabado, domingo: domingo);
+    }
+
+    const uuid = Uuid();
+    final stmt = db.raw.prepare(
+      'INSERT INTO pedido_distribuicao (id, pedido_id, data, parcela_valor) VALUES (?,?,?,?)',
+    );
+    for (final d in distribuicao) {
+      stmt.execute([uuid.v4(), pedidoId, _chaveDia(d.key), d.value]);
+    }
+    stmt.dispose();
+
+    return distribuicao.first.key;
+  }
+
+  Map<String, double> _ocupacaoPorDia(String? excluirPedidoId) {
+    final resultado = <String, double>{};
+
+    final rows = db.raw.select(
+      'SELECT pd.data, pd.parcela_valor FROM pedido_distribuicao pd '
+      'WHERE pd.pedido_id != ? OR ? IS NULL',
+      [excluirPedidoId ?? '', excluirPedidoId],
+    );
+    for (final r in rows) {
+      final data = r['data'] as String;
+      final v = (r['parcela_valor'] as num).toDouble();
+      resultado[data] = (resultado[data] ?? 0) + v;
+    }
+
+    final pedidosSemDistribuicao = db.raw.select('''
+      SELECT p.id, p.valor, p.data_producao FROM pedidos p
+      WHERE p.data_producao IS NOT NULL
+        AND p.id != ?
+        AND NOT EXISTS (SELECT 1 FROM pedido_distribuicao d WHERE d.pedido_id = p.id)
+    ''', [excluirPedidoId ?? '']);
+    for (final r in pedidosSemDistribuicao) {
+      final data = (r['data_producao'] as String).substring(0, 10);
+      final v = (r['valor'] as num).toDouble();
+      resultado[data] = (resultado[data] ?? 0) + v;
+    }
+
+    return resultado;
+  }
+
+  int calcularPrazoDias(DateTime chegada, DateTime producao) {
+    var dias = 0;
+    var cursor = _diaInicio(chegada);
+    final alvo = _diaInicio(producao);
+    while (cursor.isBefore(alvo)) {
+      cursor = cursor.add(const Duration(days: 1));
+      if (cursor.weekday < DateTime.saturday) dias++;
+    }
+    return dias;
+  }
+
+  List<Map<String, Object>> proximosDias(int n) {
+    final sabado = db.configBool('producao_sabado', false);
+    final domingo = db.configBool('producao_domingo', false);
+    final limite = db.configNumber('limite_diario', 1200);
+    final ocupacao = _ocupacaoPorDia(null);
+
+    final dias = <Map<String, Object>>[];
+    var cursor = _diaInicio(DateTime.now());
+    while (dias.length < n) {
+      cursor = _proximoDiaUtil(cursor, sabado: sabado, domingo: domingo);
+      final chave = _chaveDia(cursor);
+      dias.add({
+        'data': chave,
+        'ocupado': ocupacao[chave] ?? 0.0,
+        'limite': limite,
+      });
+      cursor = cursor.add(const Duration(days: 1));
+    }
+    return dias;
+  }
+
+  static DateTime _diaInicio(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static DateTime _proximoDiaUtil(DateTime d, {required bool sabado, required bool domingo}) {
+    var cur = _diaInicio(d);
+    while (true) {
+      if (cur.weekday == DateTime.saturday && !sabado) {
+        cur = cur.add(const Duration(days: 1));
+        continue;
+      }
+      if (cur.weekday == DateTime.sunday && !domingo) {
+        cur = cur.add(const Duration(days: 1));
+        continue;
+      }
+      return cur;
+    }
+  }
+
+  static String _chaveDia(DateTime d) {
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+  }
+}

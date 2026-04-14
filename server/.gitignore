@@ -1,0 +1,8 @@
+.dart_tool/
+.packages
+build/
+pubspec.lock
+empresa.db
+empresa.db-journal
+empresa.db-wal
+empresa.db-shm

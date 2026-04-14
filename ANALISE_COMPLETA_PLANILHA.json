@@ -1,0 +1,65 @@
+{
+  "analysis_date": "2026-04-07T09:54:07.034116",
+  "file": "/sistemas/empresa/Controle_Produção_Com_Macro_Completa.xlsm",
+  "sheets": [
+    {
+      "name": "Pedidos",
+      "id": "1",
+      "rid": "rId1"
+    },
+    {
+      "name": "ORÇAMENTO",
+      "id": "3",
+      "rid": "rId2"
+    },
+    {
+      "name": "PREÇOS",
+      "id": "2",
+      "rid": "rId3"
+    }
+  ],
+  "tables": [
+    {
+      "file": "xl/tables/table1.xml",
+      "name": "TabelaPedidos",
+      "ref": "A2:E156",
+      "columns": [
+        "CLIENTE/QUANTIDADE/TECIDO/TRABALHO",
+        "Valor (R$)",
+        "Data de Chegada",
+        "Data de Produção",
+        "PRAZO"
+      ]
+    },
+    {
+      "file": "xl/tables/table2.xml",
+      "name": "Tabela3",
+      "ref": "B25:D38",
+      "columns": [
+        "PEDIDO N °",
+        "DATA",
+        "VALOR"
+      ]
+    }
+  ],
+  "vba_modules": [
+    "EstaPastaDeTrabalho.cls (empty)",
+    "Planilha1.cls (empty)",
+    "Planilha2.cls (empty)",
+    "Planilha3.cls (empty)",
+    "Módulo1.bas (empty)",
+    "Módulo2.bas - GerarCodigoParaNovosServicos()",
+    "Módulo4.bas - GerarDataProducaoComLimite()",
+    "Módulo5.bas - GerarDatasProducaoComIntervaloEDiaDaSemana()",
+    "Módulo6.bas - GerarDatasProducaoComIntervaloEDiaDaSemana()",
+    "Módulo7.bas - CalcularPrazo()"
+  ],
+  "strings_count": 257,
+  "strings_by_category": {
+    "datas": 35,
+    "lotes": 78,
+    "servicos": 12,
+    "clientes": 115,
+    "outros": 17
+  }
+}
