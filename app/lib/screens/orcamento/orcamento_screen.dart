@@ -36,11 +36,11 @@ class _OrcamentoScreenState extends ConsumerState<OrcamentoScreen> {
     super.initState();
     _quantidadeCtl.addListener(() {
       final v = int.tryParse(_quantidadeCtl.text);
-      if (v != null && v > 0) setState(() => _quantidade = v);
+      setState(() => _quantidade = (v == null || v <= 0) ? 1 : v);
     });
     _coresCtl.addListener(() {
       final v = int.tryParse(_coresCtl.text);
-      if (v != null && v > 0) setState(() => _cores = v);
+      setState(() => _cores = (v == null || v <= 0) ? 1 : v);
     });
   }
 
@@ -49,6 +49,20 @@ class _OrcamentoScreenState extends ConsumerState<OrcamentoScreen> {
     _quantidadeCtl.dispose();
     _coresCtl.dispose();
     super.dispose();
+  }
+
+  void _criarPedidoComResultado() {
+    final r = _resultado;
+    if (r == null) return;
+    final qp = <String, String>{
+      if (_tecnica != null) 'tecnica': _tecnica!,
+      'quantidade': r.quantidade.toString(),
+      'arte_cores': _cores.toString(),
+      'valor': r.total.toStringAsFixed(2),
+      if (_urgente) 'urgente': 'true',
+    };
+    final query = qp.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    context.push('/pedidos/novo?$query');
   }
 
   Future<void> _calcular() async {
@@ -90,152 +104,160 @@ class _OrcamentoScreenState extends ConsumerState<OrcamentoScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Calculadora de orçamento')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        children: [
-          // Técnica
-          SectionHeader(icon: Icons.brush_outlined, title: 'Técnica'),
-          const SizedBox(height: 8),
-          tecnicas.when(
-            loading: () => const SizedBox(
-              height: 48,
-              child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
-            ),
-            error: (e, _) => Text('Erro ao carregar técnicas', style: TextStyle(color: theme.colorScheme.error)),
-            data: (lista) => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final t in lista)
-                  ChoiceChip(
-                    label: Text(t),
-                    selected: _tecnica == t,
-                    onSelected: (_) => setState(() => _tecnica = t),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Região
-          SectionHeader(icon: Icons.place_outlined, title: 'Região'),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Frente/Costas'),
-                selected: _regiao == 'FRENTE/COSTAS',
-                onSelected: (_) => setState(() => _regiao = 'FRENTE/COSTAS'),
-              ),
-              ChoiceChip(
-                label: const Text('Bottom/Nuca'),
-                selected: _regiao == 'BOTTOM/NUCA',
-                onSelected: (_) => setState(() => _regiao = 'BOTTOM/NUCA'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // Quantidade
-          SectionHeader(icon: Icons.numbers, title: 'Quantidade'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _quantidadeCtl,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(
-              hintText: '25',
-              prefixIcon: Icon(Icons.numbers),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Nº de cores
-          SectionHeader(icon: Icons.palette_outlined, title: 'Número de cores'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              IconButton.filledTonal(
-                onPressed: _cores <= 1
-                    ? null
-                    : () {
-                        _cores--;
-                        _coresCtl.text = _cores.toString();
-                      },
-                icon: const Icon(Icons.remove),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 72,
-                child: TextFormField(
-                  controller: _coresCtl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(isDense: true),
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton.filledTonal(
-                onPressed: () {
-                  _cores++;
-                  _coresCtl.text = _cores.toString();
-                },
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // Urgente
-          SwitchListTile(
-            value: _urgente,
-            onChanged: (v) => setState(() => _urgente = v),
-            title: const Text('Urgente'),
-            subtitle: const Text('Aplica taxa adicional configurável'),
-            contentPadding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          const SizedBox(height: 12),
-
-          // Tipo de peça
-          DropdownButtonFormField<String?>(
-            initialValue: _tipoPeca,
-            decoration: const InputDecoration(
-              labelText: 'Tipo de peça',
-              prefixIcon: Icon(Icons.checkroom),
-            ),
-            items: const [
-              DropdownMenuItem(value: null, child: Text('Peça normal')),
-              DropdownMenuItem(value: 'moletom_aberto', child: Text('Moletom aberto (+20%)')),
-              DropdownMenuItem(value: 'moletom_fechado', child: Text('Moletom fechado (+60%)')),
-            ],
-            onChanged: (v) => setState(() => _tipoPeca = v),
-          ),
-          const SizedBox(height: 24),
-
-          // Erro
-          if (_erro != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(_erro!, style: TextStyle(color: theme.colorScheme.error)),
-            ),
-
-          // Botão calcular
-          FilledButton.icon(
+      persistentFooterButtons: [
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
             onPressed: _calculando ? null : _calcular,
             icon: _calculando
                 ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.calculate_outlined),
             label: const Text('Calcular'),
+            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
           ),
-          const SizedBox(height: 20),
+        ),
+      ],
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        children: [
+          // ── Card 1: Peça e técnica ──
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SectionHeader(icon: Icons.brush_outlined, title: 'Peça e técnica'),
+                  const SizedBox(height: 16),
+                  Text('Técnica', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 8),
+                  tecnicas.when(
+                    loading: () => const SizedBox(
+                      height: 48,
+                      child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+                    ),
+                    error: (e, _) => Text('Erro ao carregar técnicas', style: TextStyle(color: theme.colorScheme.error)),
+                    data: (lista) => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final t in lista)
+                          ChoiceChip(
+                            label: Text(t),
+                            selected: _tecnica == t,
+                            onSelected: (_) => setState(() => _tecnica = t),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Região', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'FRENTE/COSTAS', label: Text('Frente/Costas')),
+                      ButtonSegment(value: 'BOTTOM/NUCA', label: Text('Bottom/Nuca')),
+                    ],
+                    selected: {_regiao},
+                    onSelectionChanged: (s) => setState(() => _regiao = s.first),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String?>(
+                    initialValue: _tipoPeca,
+                    decoration: const InputDecoration(
+                      labelText: 'Tipo de peça',
+                      prefixIcon: Icon(Icons.checkroom),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: null, child: Text('Peça normal')),
+                      DropdownMenuItem(value: 'moletom_aberto', child: Text('Moletom aberto (+20%)')),
+                      DropdownMenuItem(value: 'moletom_fechado', child: Text('Moletom fechado (+60%)')),
+                    ],
+                    onChanged: (v) => setState(() => _tipoPeca = v),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Card 2: Parâmetros ──
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SectionHeader(icon: Icons.tune, title: 'Parâmetros'),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _quantidadeCtl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Quantidade',
+                      prefixIcon: Icon(Icons.numbers),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Número de cores', style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: _cores <= 1
+                            ? null
+                            : () {
+                                setState(() => _cores--);
+                                _coresCtl.text = _cores.toString();
+                              },
+                        icon: const Icon(Icons.remove),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 72,
+                        child: TextFormField(
+                          controller: _coresCtl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          textAlign: TextAlign.center,
+                          decoration: const InputDecoration(isDense: true),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton.filledTonal(
+                        onPressed: () {
+                          setState(() => _cores++);
+                          _coresCtl.text = _cores.toString();
+                        },
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    value: _urgente,
+                    onChanged: (v) => setState(() => _urgente = v),
+                    title: const Text('Urgente'),
+                    subtitle: const Text('Aplica taxa adicional configurável'),
+                    contentPadding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Erro
+          if (_erro != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(_erro!, style: TextStyle(color: theme.colorScheme.error)),
+            ),
 
           // Resultado
           if (_resultado != null) ...[
+            const SizedBox(height: 16),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -278,18 +300,28 @@ class _OrcamentoScreenState extends ConsumerState<OrcamentoScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         OutlinedButton(
                           onPressed: () => setState(() => _resultado = null),
                           child: const Text('Novo cálculo'),
                         ),
-                        const Spacer(),
-                        FilledButton.icon(
-                          onPressed: () => context.pop(_resultado!.total),
-                          icon: const Icon(Icons.check),
-                          label: const Text('Usar este valor'),
-                        ),
+                        if (Navigator.of(context).canPop() && GoRouterState.of(context).uri.queryParameters['from'] == 'pedido')
+                          FilledButton.icon(
+                            onPressed: () => context.pop(_resultado!.total),
+                            icon: const Icon(Icons.check),
+                            label: const Text('Usar este valor'),
+                          )
+                        else
+                          FilledButton.icon(
+                            onPressed: _criarPedidoComResultado,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Criar pedido'),
+                          ),
                       ],
                     ),
                   ],

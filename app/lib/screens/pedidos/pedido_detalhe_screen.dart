@@ -40,9 +40,38 @@ class PedidoDetalheScreen extends ConsumerWidget {
             error: (_, __) => const SizedBox.shrink(),
             data: (_) => PopupMenuButton<String>(
               onSelected: (action) => _handleMenu(context, ref, action, pedidoAsync.value!),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'duplicar', child: Text('Duplicar')),
-                PopupMenuItem(value: 'excluir', child: Text('Excluir')),
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: 'duplicar',
+                  child: ListTile(
+                    leading: Icon(Icons.content_copy),
+                    title: Text('Duplicar'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'reagendar',
+                  child: ListTile(
+                    leading: Icon(Icons.event_repeat),
+                    title: Text('Reagendar automaticamente'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'excluir',
+                  child: ListTile(
+                    leading: Icon(Icons.delete_outline, color: Theme.of(ctx).colorScheme.error),
+                    title: Text(
+                      'Excluir',
+                      style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                    ),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
               ],
             ),
           ),
@@ -59,25 +88,29 @@ class PedidoDetalheScreen extends ConsumerWidget {
             ref.invalidate(pedidoProvider(pedidoId));
             ref.invalidate(pagamentosProvider(pedidoId));
           },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-            children: [
-              // ═══ Card 1: Cabeçalho ═══
-              Card(
+          child: LayoutBuilder(builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            final temArte = pedido.arteCores != null ||
+                pedido.arteTamanhoCm != null ||
+                (pedido.artePosicao?.isNotEmpty ?? false) ||
+                (pedido.arteObservacao?.isNotEmpty ?? false);
+
+            final cabecalho = Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           StatusPill(status: pedido.status),
-                          const SizedBox(width: 8),
                           PagamentoPill(statusPagamento: pedido.statusPagamento),
-                          const Spacer(),
                           if (pedido.urgente)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.errorContainer,
                                 borderRadius: BorderRadius.circular(999),
@@ -85,14 +118,15 @@ class PedidoDetalheScreen extends ConsumerWidget {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.flash_on, size: 11, color: Theme.of(context).colorScheme.onErrorContainer),
-                                  const SizedBox(width: 3),
+                                  Icon(Icons.flash_on, size: 14, color: Theme.of(context).colorScheme.onErrorContainer),
+                                  const SizedBox(width: 4),
                                   Text(
                                     'URGENTE',
                                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                                           color: Theme.of(context).colorScheme.onErrorContainer,
                                           fontWeight: FontWeight.w800,
-                                          fontSize: 9.5,
+                                          fontSize: 12,
+                                          letterSpacing: 0.5,
                                         ),
                                   ),
                                 ],
@@ -118,11 +152,9 @@ class PedidoDetalheScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
+              );
 
-              // ═══ Card 2: Peça ═══
-              Card(
+            final cardPeca = Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -139,31 +171,28 @@ class PedidoDetalheScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
+              );
 
-              // ═══ Card 3: Arte ═══
-              if (pedido.arteCores != null || pedido.arteTamanhoCm != null || (pedido.artePosicao?.isNotEmpty ?? false) || (pedido.arteObservacao?.isNotEmpty ?? false))
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SectionHeader(icon: Icons.palette_outlined, title: 'Arte'),
-                        const SizedBox(height: 12),
-                        _Info('Cores', pedido.arteCores?.toString()),
-                        _Info('Tamanho', pedido.arteTamanhoCm),
-                        _Info('Posição', pedido.artePosicao),
-                        _Info('Observação', pedido.arteObservacao),
-                      ],
+            final cardArte = temArte
+                ? Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SectionHeader(icon: Icons.palette_outlined, title: 'Arte'),
+                          const SizedBox(height: 12),
+                          _Info('Cores', pedido.arteCores?.toString()),
+                          _Info('Tamanho', pedido.arteTamanhoCm),
+                          _Info('Posição', pedido.artePosicao),
+                          _Info('Observação', pedido.arteObservacao),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              if (pedido.arteCores != null || pedido.arteTamanhoCm != null) const SizedBox(height: 12),
+                  )
+                : null;
 
-              // ═══ Card 4: Agenda ═══
-              Card(
+            final cardAgenda = Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -181,11 +210,9 @@ class PedidoDetalheScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
+              );
 
-              // ═══ Card 5: Entrega ═══
-              Card(
+            final cardEntrega = Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -199,19 +226,20 @@ class PedidoDetalheScreen extends ConsumerWidget {
                         const SizedBox(height: 8),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                            color: Theme.of(context).colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary),
-                              const SizedBox(width: 8),
+                              Icon(Icons.check_circle, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
                                   'Entregue${pedido.entregueEm != null ? " em ${data.format(pedido.entregueEm!)}" : ""}${pedido.entreguePor != null ? " por ${pedido.entreguePor}" : ""}',
                                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Theme.of(context).colorScheme.onPrimaryContainer,
                                         fontWeight: FontWeight.w600,
                                       ),
                                 ),
@@ -223,11 +251,9 @@ class PedidoDetalheScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
+              );
 
-              // ═══ Card 6: Pagamentos ═══
-              Card(
+            final cardPagamentos = Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -248,26 +274,75 @@ class PedidoDetalheScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
+              );
 
-              // ═══ Card 7: Observação ═══
-              if (pedido.observacao != null && pedido.observacao!.isNotEmpty)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SectionHeader(icon: Icons.note_outlined, title: 'Observação'),
-                        const SizedBox(height: 8),
-                        Text(pedido.observacao!, style: Theme.of(context).textTheme.bodyMedium),
-                      ],
+            final cardObservacao = (pedido.observacao != null && pedido.observacao!.isNotEmpty)
+                ? Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SectionHeader(icon: Icons.note_outlined, title: 'Observação'),
+                          const SizedBox(height: 8),
+                          Text(pedido.observacao!, style: Theme.of(context).textTheme.bodyMedium),
+                        ],
+                      ),
                     ),
-                  ),
+                  )
+                : null;
+
+            Widget pair(Widget? a, Widget b) {
+              if (a == null) return b;
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: a),
+                    const SizedBox(width: 12),
+                    Expanded(child: b),
+                  ],
                 ),
-            ],
-          ),
+              );
+            }
+
+            final children = <Widget>[
+              cabecalho,
+              const SizedBox(height: 12),
+              if (wide) ...[
+                pair(cardArte, cardPeca),
+                const SizedBox(height: 12),
+                pair(cardEntrega, cardAgenda),
+                const SizedBox(height: 12),
+              ] else ...[
+                cardPeca,
+                const SizedBox(height: 12),
+                if (cardArte != null) ...[
+                  cardArte,
+                  const SizedBox(height: 12),
+                ],
+                cardAgenda,
+                const SizedBox(height: 12),
+                cardEntrega,
+                const SizedBox(height: 12),
+              ],
+              cardPagamentos,
+              if (cardObservacao != null) ...[
+                const SizedBox(height: 12),
+                cardObservacao,
+              ],
+            ];
+
+            return ListView(
+              padding: EdgeInsets.fromLTRB(
+                wide ? 24 : 16,
+                16,
+                wide ? 24 : 16,
+                32,
+              ),
+              children: children,
+            );
+          }),
         ),
       ),
     );
@@ -290,6 +365,24 @@ class PedidoDetalheScreen extends ConsumerWidget {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erro ao duplicar: $e')),
+          );
+        }
+      }
+    } else if (action == 'reagendar') {
+      try {
+        await ref.read(apiClientProvider).agendarPedido(pedido.id);
+        ref.invalidate(pedidoProvider(pedido.id));
+        ref.invalidate(pedidosProvider);
+        ref.invalidate(dashboardProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Pedido reagendado')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao reagendar: $e')),
           );
         }
       }
@@ -554,15 +647,21 @@ class _Info extends StatelessWidget {
     if (valor == null || valor!.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 100,
-            child: Text(label, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
+          Text(
+            label.toUpperCase(),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.outline,
+              letterSpacing: 0.6,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          Expanded(child: Text(valor!, style: theme.textTheme.bodyMedium)),
+          const SizedBox(height: 2),
+          Text(valor!, style: theme.textTheme.bodyMedium),
         ],
       ),
     );

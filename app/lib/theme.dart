@@ -41,7 +41,7 @@ const _lightScheme = ColorScheme(
   scrim: Color(0xFF000000),
   inverseSurface: Color(0xFF2F2F2C),
   onInverseSurface: Color(0xFFF1F1EC),
-  inversePrimary: Color(0xFF99CCFF),
+  inversePrimary: Color(0xFF80CBC4),
 );
 
 const _darkScheme = ColorScheme(
@@ -76,7 +76,7 @@ const _darkScheme = ColorScheme(
   scrim: Color(0xFF000000),
   inverseSurface: Color(0xFFE8E8E5),
   onInverseSurface: Color(0xFF2F2F2C),
-  inversePrimary: Color(0xFF0066CC),
+  inversePrimary: _primaryColor,
 );
 
 // ── Text theme ───────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ ThemeData buildLightTheme() {
       shadowColor: Colors.black.withValues(alpha: 0.08),
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: scheme.surface,
+      color: scheme.surfaceContainerLow,
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

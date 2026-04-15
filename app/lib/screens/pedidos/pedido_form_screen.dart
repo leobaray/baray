@@ -10,12 +10,31 @@ import '../../models/pedido.dart';
 import '../../state/clientes_provider.dart';
 import '../../state/dashboard_provider.dart';
 import '../../state/pedidos_provider.dart';
-import '../../widgets/empty_state.dart';
 
 class PedidoFormScreen extends ConsumerStatefulWidget {
   final String? pedidoId;
   final String? clienteIdInicial;
-  const PedidoFormScreen({super.key, this.pedidoId, this.clienteIdInicial});
+  final String? dataProducaoInicial;
+  final bool? autoAgendarInicial;
+  final String? pecaInicial;
+  final String? tecnicaInicial;
+  final String? quantidadeInicial;
+  final String? valorInicial;
+  final String? arteCoresInicial;
+  final bool? urgenteInicial;
+  const PedidoFormScreen({
+    super.key,
+    this.pedidoId,
+    this.clienteIdInicial,
+    this.dataProducaoInicial,
+    this.autoAgendarInicial,
+    this.pecaInicial,
+    this.tecnicaInicial,
+    this.quantidadeInicial,
+    this.valorInicial,
+    this.arteCoresInicial,
+    this.urgenteInicial,
+  });
 
   @override
   ConsumerState<PedidoFormScreen> createState() => _PedidoFormScreenState();
@@ -62,17 +81,57 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
   bool _confirmandoSaida = false;
   String? _erro;
   Pedido? _original;
-  final _autocompleteKey = GlobalKey<FormFieldState<String>>();
+  late final TextEditingController _autoClienteCtl;
+  late final FocusNode _autoClienteFocus;
 
   bool get _isEdicao => widget.pedidoId != null;
 
   @override
   void initState() {
     super.initState();
+    _autoClienteCtl = TextEditingController(text: _clienteCtl.text);
+    _autoClienteFocus = FocusNode();
+    _autoClienteCtl.addListener(() {
+      if (_autoClienteCtl.text != _clienteCtl.text) {
+        _clienteCtl.text = _autoClienteCtl.text;
+        setState(() => _clienteId = null);
+      }
+    });
     if (widget.pedidoId != null) {
       _carregar();
-    } else if (widget.clienteIdInicial != null) {
-      _carregarClienteInicial();
+    } else {
+      if (widget.clienteIdInicial != null) {
+        _carregarClienteInicial();
+      }
+      _aplicarValoresIniciais();
+    }
+  }
+
+  void _aplicarValoresIniciais() {
+    if (widget.pecaInicial != null) _pecaCtl.text = widget.pecaInicial!;
+    if (widget.tecnicaInicial != null) _tecnicaCtl.text = widget.tecnicaInicial!;
+    if (widget.quantidadeInicial != null) _quantidadeCtl.text = widget.quantidadeInicial!;
+    if (widget.valorInicial != null) {
+      final v = double.tryParse(widget.valorInicial!);
+      if (v != null) {
+        _valorCtl.text = v.toStringAsFixed(2).replaceAll('.', ',');
+      } else {
+        _valorCtl.text = widget.valorInicial!;
+      }
+    }
+    if (widget.arteCoresInicial != null) _arteCoresCtl.text = widget.arteCoresInicial!;
+    if (widget.urgenteInicial != null) _urgente = widget.urgenteInicial!;
+    if (widget.autoAgendarInicial != null) _autoAgendar = widget.autoAgendarInicial!;
+    if (widget.dataProducaoInicial != null) {
+      final parts = widget.dataProducaoInicial!.split('-');
+      if (parts.length == 3) {
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        final d = int.tryParse(parts[2]);
+        if (y != null && m != null && d != null) {
+          _dataProducao = DateTime(y, m, d);
+        }
+      }
     }
   }
 
@@ -93,6 +152,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
   void _preencherPedido(Pedido p) {
     _clienteId = p.clienteId;
     _clienteCtl.text = p.clienteNome;
+    _autoClienteCtl.text = p.clienteNome;
     _telefoneCtl.text = p.clienteTelefone ?? '';
     _emailCtl.text = p.clienteEmail ?? '';
     _pecaCtl.text = p.peca ?? '';
@@ -125,8 +185,10 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       final c = await api.buscarCliente(widget.clienteIdInicial!);
       _clienteId = c.id;
       _clienteCtl.text = c.nome;
+      _autoClienteCtl.text = c.nome;
       _telefoneCtl.text = c.telefone ?? '';
       _emailCtl.text = c.email ?? '';
+      if (mounted) setState(() {});
     } catch (_) {
       // silencioso — o campo fica vazio
     }
@@ -151,6 +213,8 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     _enderecoCtl.dispose();
     _entreguePorCtl.dispose();
     _observacaoCtl.dispose();
+    _autoClienteCtl.dispose();
+    _autoClienteFocus.dispose();
     super.dispose();
   }
 
@@ -172,7 +236,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
   }
 
   Future<void> _abrirOrcamento() async {
-    final total = await context.push<double?>('/orcamento');
+    final total = await context.push<double?>('/orcamento?from=pedido');
     if (total != null && mounted) {
       _valorCtl.text = total.toStringAsFixed(2).replaceAll('.', ',');
     }
@@ -341,10 +405,18 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     final theme = Theme.of(context);
     final clientes = ref.watch(clientesProvider).value ?? [];
 
+    final podeConfirmarSaida = _isEdicao && _original != null && !_original!.entregue;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEdicao ? 'Editar pedido' : 'Novo pedido'),
         actions: [
+          if (podeConfirmarSaida)
+            IconButton(
+              icon: const Icon(Icons.local_shipping_outlined),
+              tooltip: 'Confirmar saída',
+              onPressed: _confirmandoSaida ? null : _confirmarSaida,
+            ),
           if (_isEdicao)
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -353,6 +425,19 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             ),
         ],
       ),
+      persistentFooterButtons: [
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _salvando ? null : _salvar,
+            icon: _salvando
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check),
+            label: Text(_isEdicao ? 'Salvar alterações' : 'Criar pedido'),
+            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+          ),
+        ),
+      ],
       body: Form(
         key: _formKey,
         child: ListView(
@@ -383,9 +468,9 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
               icon: Icons.person_outline,
               title: 'Cliente',
               children: [
-                Autocomplete<Cliente>(
-                  key: _autocompleteKey,
-                  initialValue: TextEditingValue(text: _clienteCtl.text),
+                RawAutocomplete<Cliente>(
+                  textEditingController: _autoClienteCtl,
+                  focusNode: _autoClienteFocus,
                   optionsBuilder: (textEditingValue) {
                     final query = textEditingValue.text.toLowerCase();
                     if (query.isEmpty) return const Iterable<Cliente>.empty();
@@ -393,24 +478,15 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   },
                   displayStringForOption: (c) => c.nome,
                   onSelected: (c) {
-                    _clienteId = c.id;
-                    _clienteCtl.text = c.nome;
-                    _telefoneCtl.text = c.telefone ?? '';
-                    _emailCtl.text = c.email ?? '';
+                    setState(() {
+                      _clienteId = c.id;
+                      _clienteCtl.text = c.nome;
+                      _autoClienteCtl.text = c.nome;
+                      _telefoneCtl.text = c.telefone ?? '';
+                      _emailCtl.text = c.email ?? '';
+                    });
                   },
                   fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                    // Sync external controller
-                    controller.text = _clienteCtl.text;
-                    controller.addListener(() {
-                      if (controller.text != _clienteCtl.text) {
-                        _clienteCtl.text = controller.text;
-                        // Se o usuário digitou manualmente (não selecionou do autocomplete),
-                        // o ID do cliente não corresponde mais — limpar
-                        setState(() {
-                          _clienteId = null;
-                        });
-                      }
-                    });
                     return TextFormField(
                       controller: controller,
                       focusNode: focusNode,
@@ -423,12 +499,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                                 message: 'Cliente vinculado',
                                 child: Icon(Icons.link, color: theme.colorScheme.primary, size: 20),
                               )
-                            : _clienteCtl.text.trim().isNotEmpty
-                                ? Tooltip(
-                                    message: 'Cliente NÃO vinculado — toque para selecionar ou criar',
-                                    child: Icon(Icons.warning_amber, color: theme.colorScheme.error, size: 20),
-                                  )
-                                : null,
+                            : null,
                       ),
                       textInputAction: TextInputAction.next,
                       onFieldSubmitted: (_) => onFieldSubmitted(),
@@ -577,16 +648,16 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
                     onPressed: _abrirOrcamento,
                     icon: const Icon(Icons.calculate_outlined, size: 18),
                     label: const Text('Calcular orçamento'),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -621,6 +692,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             _SectionCard(
               icon: Icons.palette_outlined,
               title: 'Arte',
+              initiallyExpanded: false,
               children: [
                 Row(
                   children: [
@@ -726,6 +798,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             _SectionCard(
               icon: Icons.local_shipping_outlined,
               title: 'Entrega',
+              initiallyExpanded: false,
               children: [
                 SizedBox(
                   width: double.infinity,
@@ -764,6 +837,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             _SectionCard(
               icon: Icons.payments_outlined,
               title: 'Pagamento',
+              initiallyExpanded: false,
               children: [
                 DropdownButtonFormField<String?>(
                   initialValue: _formaPagamento,
@@ -800,6 +874,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             _SectionCard(
               icon: Icons.note_outlined,
               title: 'Observação',
+              initiallyExpanded: false,
               children: [
                 TextFormField(
                   controller: _observacaoCtl,
@@ -812,91 +887,41 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
               ],
             ),
 
-            // ═══ Seção 8: Saída (só edição) ═══
+            // ═══ Seção 8: Saída (só edição) — bloco discreto ═══
             if (_isEdicao && _original != null) ...[
-              const SizedBox(height: 8),
-              Card(
-                color: theme.colorScheme.tertiaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SectionHeader(
-                        icon: Icons.local_shipping_outlined,
-                        title: 'Saída',
+              if (_original!.entregue)
+                _SectionCard(
+                  icon: Icons.check_circle_outline,
+                  title: 'Entregue',
+                  children: [
+                    Text(
+                      _original!.entregueEm != null
+                          ? 'Em ${_data.format(_original!.entregueEm!)} por ${_original!.entreguePor ?? '—'}'
+                          : 'Por ${_original!.entreguePor ?? '—'}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                )
+              else
+                _SectionCard(
+                  icon: Icons.local_shipping_outlined,
+                  title: 'Saída',
+                  children: [
+                    TextFormField(
+                      controller: _entreguePorCtl,
+                      decoration: const InputDecoration(
+                        labelText: 'Entregue por',
+                        hintText: 'Nome de quem está retirando',
+                        prefixIcon: Icon(Icons.person_outlined),
                       ),
-                      const SizedBox(height: 16),
-                      if (_original!.entregue) ...[
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  size: 48,
-                                  color: theme.colorScheme.onTertiaryContainer,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Entregue',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: theme.colorScheme.onTertiaryContainer,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                if (_original!.entregueEm != null)
-                                  Text(
-                                    'em ${_data.format(_original!.entregueEm!)}',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onTertiaryContainer,
-                                    ),
-                                  ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'por ${_original!.entreguePor ?? '—'}',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onTertiaryContainer,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ] else ...[
-                        TextFormField(
-                          controller: _entreguePorCtl,
-                          decoration: InputDecoration(
-                            labelText: 'Entregue por',
-                            hintText: 'Nome de quem está retirando',
-                            prefixIcon: Icon(
-                              Icons.person_outlined,
-                              color: theme.colorScheme.onTertiaryContainer,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _confirmandoSaida ? null : _confirmarSaida,
-                            icon: _confirmandoSaida
-                                ? const SizedBox(
-                                    height: 18,
-                                    width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.local_shipping),
-                            label: const Text('CONFIRMAR SAÍDA'),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Use o ícone de caminhão na barra superior para confirmar a saída.',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
                 ),
-              ),
             ],
 
             // Erro
@@ -905,16 +930,6 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                 padding: const EdgeInsets.only(top: 16),
                 child: Text(_erro!, style: TextStyle(color: theme.colorScheme.error)),
               ),
-            const SizedBox(height: 24),
-
-            // Salvar
-            FilledButton.icon(
-              onPressed: _salvando ? null : _salvar,
-              icon: _salvando
-                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.check),
-              label: Text(_isEdicao ? 'Salvar alterações' : 'Criar pedido'),
-            ),
           ],
         ),
       ),
@@ -928,22 +943,34 @@ class _SectionCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final List<Widget> children;
-  const _SectionCard({required this.icon, required this.title, required this.children});
+  final bool initiallyExpanded;
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.children,
+    this.initiallyExpanded = true,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SectionHeader(icon: icon, title: title),
-              const SizedBox(height: 16),
-              ...children,
-            ],
+        clipBehavior: Clip.antiAlias,
+        child: Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: initiallyExpanded,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            leading: Icon(icon, color: theme.colorScheme.primary),
+            title: Text(
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            children: children,
           ),
         ),
       ),
@@ -1058,7 +1085,9 @@ class _DateField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: const Icon(Icons.calendar_today_outlined),
+          prefixIcon: Icon(
+            data != null ? Icons.edit_calendar_outlined : Icons.calendar_today_outlined,
+          ),
           suffixIcon: data != null
               ? IconButton(icon: const Icon(Icons.close), onPressed: onClear)
               : const Icon(Icons.arrow_drop_down),

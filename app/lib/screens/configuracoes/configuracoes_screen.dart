@@ -18,7 +18,6 @@ class ConfiguracoesScreen extends ConsumerStatefulWidget {
 class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
   final _serverUrlCtl = TextEditingController();
   bool _testando = false;
-  String? _testResult;
 
   @override
   void initState() {
@@ -47,25 +46,30 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
   }
 
   Future<void> _testar() async {
-    setState(() {
-      _testando = true;
-      _testResult = null;
-    });
+    setState(() => _testando = true);
+    String msg;
+    Color? bg;
     try {
       final tempApi = ApiClient(_serverUrlCtl.text.trim());
       final ok = await tempApi.health();
-      setState(() => _testResult = ok ? 'Conectado' : 'Sem resposta');
+      msg = ok ? 'Conectado ✓' : 'Sem resposta do servidor';
+      bg = ok ? Colors.green.shade700 : null;
     } catch (e) {
-      setState(() => _testResult = 'Erro: $e');
+      msg = 'Erro: $e';
+      bg = Theme.of(context).colorScheme.error;
     } finally {
       if (mounted) setState(() => _testando = false);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: bg),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final configs = ref.watch(configuracoesProvider);
-    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Configurações')),
@@ -87,7 +91,9 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
                 autocorrect: false,
               ),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
                 children: [
                   FilledButton.tonalIcon(
                     onPressed: _testando ? null : _testar,
@@ -96,21 +102,11 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
                         : const Icon(Icons.wifi_tethering),
                     label: const Text('Testar conexão'),
                   ),
-                  const SizedBox(width: 12),
                   FilledButton.icon(
                     onPressed: _salvarUrl,
                     icon: const Icon(Icons.save_outlined),
                     label: const Text('Salvar'),
                   ),
-                  const Spacer(),
-                  if (_testResult != null)
-                    Text(
-                      _testResult!,
-                      style: TextStyle(
-                        color: _testResult == 'Conectado' ? Colors.green : theme.colorScheme.error,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                 ],
               ),
             ],
@@ -264,8 +260,10 @@ class _ConfigEditorState extends State<_ConfigEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_label(), style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-          Text(c.chave, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.outline)),
+          Tooltip(
+            message: c.chave,
+            child: Text(_label(), style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          ),
           const SizedBox(height: 10),
           if (c.tipo == 'bool')
             Row(
@@ -300,8 +298,7 @@ class _ConfigEditorState extends State<_ConfigEditor> {
                 ),
               ],
             ),
-          const SizedBox(height: 4),
-          Divider(color: theme.colorScheme.outlineVariant, thickness: 0.5),
+          const SizedBox(height: 8),
         ],
       ),
     );

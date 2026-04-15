@@ -22,6 +22,21 @@ class AgendaScreen extends ConsumerStatefulWidget {
 class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   _Modo _modo = _Modo.lista;
   DateTime _semanaReferencia = DateTime.now();
+  late final PageController _pageController = PageController(initialPage: 0);
+  int _paginaAtual = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  String _yyyymmdd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  void _criarPedidoNoDia(DateTime dia) {
+    context.push('/pedidos/novo?data_producao=${_yyyymmdd(dia)}&auto_agendar=false');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -178,29 +193,21 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                     const Divider(height: 24, thickness: 0.5),
                     ...ps.map(
                       (p) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 76,
-                              child: Text(
-                                p.loteFormatado,
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                '${p.clienteNome} — ${p.descricao}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(moeda.format(p.valor), style: theme.textTheme.labelMedium),
-                          ],
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: PedidoCard(
+                          pedido: p,
+                          onTap: () => context.push('/pedidos/${p.id}'),
+                          compacto: true,
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => _criarPedidoNoDia(dia),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Adicionar pedido neste dia'),
                       ),
                     ),
                   ],
@@ -266,39 +273,109 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 720;
+              final wide = constraints.maxWidth >= 1200;
               if (wide) {
-                return Row(
-                  children: [
-                    for (final dia in diasUteis)
-                      Expanded(
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      for (final dia in diasUteis)
+                        Expanded(
+                          child: _ColunaDia(
+                            dia: dia,
+                            pedidos: agrupado[dia] ?? [],
+                            limite: limite,
+                            moeda: moeda,
+                            diaCurto: diaCurto,
+                            diaNum: diaNum,
+                            onCriarPedido: () => _criarPedidoNoDia(dia),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }
+              // Tablet / mobile: scroll horizontal com colunas 280px
+              if (constraints.maxWidth >= 720) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final dia in diasUteis)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: SizedBox(
+                            width: 280,
+                            child: _ColunaDia(
+                              dia: dia,
+                              pedidos: agrupado[dia] ?? [],
+                              limite: limite,
+                              moeda: moeda,
+                              diaCurto: diaCurto,
+                              diaNum: diaNum,
+                              onCriarPedido: () => _criarPedidoNoDia(dia),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }
+              // Mobile: PageView com indicador
+              return Column(
+                children: [
+                  // Chips indicadores dos dias
+                  SizedBox(
+                    height: 44,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      itemCount: diasUteis.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) {
+                        final dia = diasUteis[i];
+                        final sel = i == _paginaAtual;
+                        return ChoiceChip(
+                          selected: sel,
+                          label: Text(
+                            '${toBeginningOfSentenceCase(diaCurto.format(dia))} ${diaNum.format(dia)}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          onSelected: (_) {
+                            _pageController.animateToPage(
+                              i,
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOut,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: PageView.builder(
+                      itemCount: diasUteis.length,
+                      controller: _pageController,
+                      onPageChanged: (i) => setState(() => _paginaAtual = i),
+                      itemBuilder: (_, i) => Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                         child: _ColunaDia(
-                          dia: dia,
-                          pedidos: agrupado[dia] ?? [],
+                          dia: diasUteis[i],
+                          pedidos: agrupado[diasUteis[i]] ?? [],
                           limite: limite,
                           moeda: moeda,
                           diaCurto: diaCurto,
                           diaNum: diaNum,
+                          onCriarPedido: () => _criarPedidoNoDia(diasUteis[i]),
                         ),
                       ),
-                  ],
-                );
-              }
-              // Mobile: PageView
-              return PageView.builder(
-                itemCount: diasUteis.length,
-                controller: PageController(initialPage: 0),
-                itemBuilder: (_, i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _ColunaDia(
-                    dia: diasUteis[i],
-                    pedidos: agrupado[diasUteis[i]] ?? [],
-                    limite: limite,
-                    moeda: moeda,
-                    diaCurto: diaCurto,
-                    diaNum: diaNum,
+                    ),
                   ),
-                ),
+                ],
               );
             },
           ),
@@ -317,6 +394,7 @@ class _ColunaDia extends StatelessWidget {
   final NumberFormat moeda;
   final DateFormat diaCurto;
   final DateFormat diaNum;
+  final VoidCallback? onCriarPedido;
 
   const _ColunaDia({
     required this.dia,
@@ -325,6 +403,7 @@ class _ColunaDia extends StatelessWidget {
     required this.moeda,
     required this.diaCurto,
     required this.diaNum,
+    this.onCriarPedido,
   });
 
   @override
@@ -400,14 +479,25 @@ class _ColunaDia extends StatelessWidget {
             // Pedidos
             if (pedidos.isEmpty)
               Expanded(
-                child: Center(
-                  child: Text(
-                    'Sem pedidos',
-                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                child: InkWell(
+                  onTap: onCriarPedido,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_circle_outline, size: 28, color: theme.colorScheme.outline),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Adicionar pedido',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               )
-            else
+            else ...[
               Expanded(
                 child: ListView.separated(
                   padding: EdgeInsets.zero,
@@ -420,6 +510,21 @@ class _ColunaDia extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onCriarPedido != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: TextButton.icon(
+                    onPressed: onCriarPedido,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Adicionar', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: const Size(0, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
+            ],
           ],
         ),
       ),

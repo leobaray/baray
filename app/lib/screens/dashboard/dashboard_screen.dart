@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../models/dashboard.dart';
 import '../../state/dashboard_provider.dart';
+import '../../state/pedidos_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/kpi_card.dart';
 import '../../widgets/pedido_card.dart';
@@ -27,14 +28,17 @@ class DashboardScreen extends ConsumerWidget {
     final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
     final dataExtensa = DateFormat("EEEE, d 'de' MMMM 'de' y", 'pt_BR');
     final diaCurto = DateFormat('EEE d', 'pt_BR');
+    final wide = MediaQuery.sizeOf(context).width >= 720;
 
     return Scaffold(
       appBar: AppBar(
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.print_outlined, color: theme.colorScheme.primary, size: 24),
-            const SizedBox(width: 8),
+            if (!wide) ...[
+              Icon(Icons.print_outlined, color: theme.colorScheme.primary, size: 24),
+              const SizedBox(width: 8),
+            ],
             Text(
               'Serigrafia Baray',
               style: TextStyle(
@@ -103,25 +107,34 @@ class DashboardScreen extends ConsumerWidget {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final crossCount = constraints.maxWidth >= 720 ? 4 : 2;
-                  return GridView.count(
-                    crossAxisCount: crossCount,
+                  return GridView(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: crossCount == 4 ? 1.4 : 1.2,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossCount,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      mainAxisExtent: 140,
+                    ),
                     children: [
                       KpiCard(
                         icon: Icons.trending_up,
                         label: 'FATURAMENTO DO MÊS',
                         valor: moeda.format(stats.faturamentoMes),
                         accent: Colors.green,
+                        onTap: () => context.push('/pedidos'),
                       ),
                       KpiCard(
                         icon: Icons.account_balance_wallet_outlined,
                         label: 'A RECEBER',
                         valor: moeda.format(stats.aReceber),
                         accent: Colors.orange,
+                        onTap: () {
+                          ref.read(pedidosFiltroProvider.notifier).update(
+                                (f) => f.copyWith(statusPagamento: 'devendo'),
+                              );
+                          context.push('/pedidos');
+                        },
                       ),
                       KpiCard(
                         icon: Icons.precision_manufacturing_outlined,
@@ -129,134 +142,218 @@ class DashboardScreen extends ConsumerWidget {
                         valor: '${stats.emProducaoHoje.length}',
                         hint: moeda.format(stats.emProducaoHoje.fold<double>(0, (s, p) => s + p.valor)),
                         accent: theme.colorScheme.tertiary,
+                        onTap: () => context.push('/agenda'),
                       ),
                       KpiCard(
                         icon: Icons.schedule,
-                        label: 'VENCENDO',
+                        label: 'VENCEM EM 7 DIAS',
                         valor: '${stats.prazosVencendo.length}',
-                        hint: '7 dias',
                         accent: theme.colorScheme.error,
+                        onTap: () => context.push('/pedidos'),
                       ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: wide ? 20 : 16),
 
-              // Ocupação da semana
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SectionHeader(icon: Icons.bar_chart, title: 'Ocupação da semana'),
-                      const SizedBox(height: 16),
-                      ...stats.ocupacaoSemana.map((dia) => _OcupacaoBar(
-                            dia: dia,
-                            moeda: moeda,
-                            diaCurto: diaCurto,
-                          )),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
+              // Conteúdo principal — empilhado no mobile, emparelhado no desktop.
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardOcupacao = _OcupacaoCard(stats: stats, moeda: moeda, diaCurto: diaCurto);
+                  final cardProducao = _ProducaoHojeCard(stats: stats);
+                  final cardVencendo = stats.prazosVencendo.isNotEmpty ? _VencendoCard(stats: stats) : null;
+                  final cardUltimos = _UltimosMovimentosCard(stats: stats);
 
-              // Em produção hoje
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SectionHeader(
-                        icon: Icons.today,
-                        title: 'Em produção hoje',
-                        subtitle: '${stats.emProducaoHoje.length} pedido${stats.emProducaoHoje.length == 1 ? '' : 's'}',
-                      ),
-                      const SizedBox(height: 12),
-                      if (stats.emProducaoHoje.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Center(
-                            child: Text(
-                              'Nenhum pedido hoje',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.outline,
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        ...stats.emProducaoHoje.map(
-                          (p) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: PedidoCard(
-                              pedido: p,
-                              onTap: () => context.push('/pedidos/${p.id}'),
-                              compacto: true,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Prazos vencendo
-              if (stats.prazosVencendo.isNotEmpty) ...[
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
+                  if (constraints.maxWidth >= 1100) {
+                    return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SectionHeader(icon: Icons.warning_amber_rounded, title: 'Prazos vencendo'),
-                        const SizedBox(height: 12),
-                        ...stats.prazosVencendo.map(
-                          (p) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: PedidoCard(
-                              pedido: p,
-                              onTap: () => context.push('/pedidos/${p.id}'),
-                              compacto: true,
-                            ),
+                        IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: cardOcupacao),
+                              const SizedBox(width: 16),
+                              Expanded(child: cardProducao),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (cardVencendo != null) ...[
+                                Expanded(child: cardVencendo),
+                                const SizedBox(width: 16),
+                              ],
+                              Expanded(child: cardUltimos),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
+                    );
+                  }
 
-              // Últimos movimentos
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+                  // Mobile/tablet: empilhado.
+                  return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SectionHeader(icon: Icons.history, title: 'Últimos movimentos'),
-                      const SizedBox(height: 12),
-                      ...stats.ultimosMovimentos.take(5).map(
-                            (p) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: PedidoCard(
-                                pedido: p,
-                                onTap: () => context.push('/pedidos/${p.id}'),
-                                compacto: true,
-                              ),
-                            ),
-                          ),
+                      cardOcupacao,
+                      const SizedBox(height: 16),
+                      cardProducao,
+                      const SizedBox(height: 16),
+                      if (cardVencendo != null) ...[
+                        cardVencendo,
+                        const SizedBox(height: 16),
+                      ],
+                      cardUltimos,
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OcupacaoCard extends StatelessWidget {
+  final DashboardStats stats;
+  final NumberFormat moeda;
+  final DateFormat diaCurto;
+  const _OcupacaoCard({required this.stats, required this.moeda, required this.diaCurto});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(icon: Icons.bar_chart, title: 'Ocupação da semana'),
+            const SizedBox(height: 16),
+            ...stats.ocupacaoSemana.map<Widget>((dia) => _OcupacaoBar(
+                  dia: dia,
+                  moeda: moeda,
+                  diaCurto: diaCurto,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProducaoHojeCard extends StatelessWidget {
+  final DashboardStats stats;
+  const _ProducaoHojeCard({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(
+              icon: Icons.today,
+              title: 'Em produção hoje',
+              subtitle: '${stats.emProducaoHoje.length} pedido${stats.emProducaoHoje.length == 1 ? '' : 's'}',
+            ),
+            const SizedBox(height: 12),
+            if (stats.emProducaoHoje.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Text(
+                    'Nenhum pedido hoje',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                ),
+              )
+            else
+              ...stats.emProducaoHoje.map<Widget>(
+                (p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: PedidoCard(
+                    pedido: p,
+                    onTap: () => context.push('/pedidos/${p.id}'),
+                    compacto: true,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VencendoCard extends StatelessWidget {
+  final DashboardStats stats;
+  const _VencendoCard({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(icon: Icons.warning_amber_rounded, title: 'Prazos vencendo'),
+            const SizedBox(height: 12),
+            ...stats.prazosVencendo.map<Widget>(
+              (p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: PedidoCard(
+                  pedido: p,
+                  onTap: () => context.push('/pedidos/${p.id}'),
+                  compacto: true,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UltimosMovimentosCard extends StatelessWidget {
+  final DashboardStats stats;
+  const _UltimosMovimentosCard({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(icon: Icons.history, title: 'Últimos movimentos'),
+            const SizedBox(height: 12),
+            ...stats.ultimosMovimentos.take(5).map<Widget>(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: PedidoCard(
+                      pedido: p,
+                      onTap: () => context.push('/pedidos/${p.id}'),
+                      compacto: true,
+                    ),
+                  ),
+                ),
+          ],
         ),
       ),
     );
@@ -305,10 +402,11 @@ class _OcupacaoBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          SizedBox(
-            width: 130,
+          Flexible(
             child: Text(
               '${moeda.format(dia.ocupado)} / ${moeda.format(dia.limite)}',
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: dia.estourado ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant,
                 fontWeight: dia.estourado ? FontWeight.w700 : FontWeight.w500,

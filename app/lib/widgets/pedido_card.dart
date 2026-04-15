@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/pedido.dart';
+import '../theme/spacing.dart';
+import '../theme/status_colors.dart';
 import 'status_pill.dart';
+import 'tint_chip.dart';
 
 /// Card de pedido rico, usado na lista, dashboard e kanban.
 class PedidoCard extends StatelessWidget {
@@ -35,12 +38,49 @@ class PedidoCard extends StatelessWidget {
         !pedido.entregue &&
         pedido.dataEntregaCombinada!.isBefore(hojeData);
 
+    // Monta chips de metadata. Em compacto limita a 4 pra não estourar linhas.
+    final chips = <Widget>[
+      TintChip(
+        icon: Icons.payments_outlined,
+        label: moeda.format(pedido.valor),
+        strong: true,
+      ),
+      if (pedido.quantidade != null)
+        TintChip(icon: Icons.numbers, label: '${pedido.quantidade} pç'),
+      if (pedido.tecnica != null)
+        TintChip(icon: Icons.brush_outlined, label: pedido.tecnica!),
+      if (pedido.arteCores != null)
+        TintChip(icon: Icons.palette_outlined, label: '${pedido.arteCores}c'),
+      if (produzHoje)
+        TintChip(
+          icon: Icons.today,
+          label: 'HOJE',
+          bg: theme.colorScheme.tertiaryContainer,
+          fg: theme.colorScheme.onTertiaryContainer,
+        ),
+      if (pedido.dataProducao != null && !produzHoje)
+        TintChip(
+          icon: Icons.precision_manufacturing_outlined,
+          label: dataFmt.format(pedido.dataProducao!),
+        ),
+      if (atrasado)
+        TintChip(
+          icon: Icons.warning_amber_rounded,
+          label: 'ATRASADO',
+          bg: theme.colorScheme.errorContainer,
+          fg: theme.colorScheme.onErrorContainer,
+        )
+      else if (vencendo)
+        _VencendoChip(),
+    ];
+    final chipsVisiveis = compacto && chips.length > 4 ? chips.sublist(0, 4) : chips;
+
     return Card(
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: EdgeInsets.all(compacto ? 14 : 18),
+          padding: EdgeInsets.all(compacto ? AppSpacing.gapLg - 2 : 18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -62,46 +102,24 @@ class PedidoCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.gapSm),
+                  // StatusPill no topo — sempre visível, inclusive em compacto.
+                  StatusPill(status: pedido.status, small: compacto),
+                  const SizedBox(width: AppSpacing.gapSm),
                   Expanded(
                     child: Text(
                       pedido.clienteNome,
                       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
                     ),
                   ),
-                  if (pedido.urgente)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.flash_on,
-                              size: 11,
-                              color: theme.colorScheme.onErrorContainer,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              'URGENTE',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onErrorContainer,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 9.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                 ],
               ),
+              if (pedido.urgente) ...[
+                const SizedBox(height: AppSpacing.gapSm),
+                _UrgenteChip(),
+              ],
               if (!compacto) const SizedBox(height: 10),
               if (!compacto)
                 Text(
@@ -110,60 +128,17 @@ class PedidoCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-              SizedBox(height: compacto ? 8 : 14),
+              SizedBox(height: compacto ? AppSpacing.gapSm : 14),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _Chip(
-                    icon: Icons.payments_outlined,
-                    label: moeda.format(pedido.valor),
-                    strong: true,
-                  ),
-                  if (pedido.quantidade != null)
-                    _Chip(
-                      icon: Icons.numbers,
-                      label: '${pedido.quantidade} pç',
-                    ),
-                  if (pedido.tecnica != null)
-                    _Chip(icon: Icons.brush_outlined, label: pedido.tecnica!),
-                  if (pedido.arteCores != null)
-                    _Chip(icon: Icons.palette_outlined, label: '${pedido.arteCores}c'),
-                  if (produzHoje)
-                    _Chip(
-                      icon: Icons.today,
-                      label: 'HOJE',
-                      bg: theme.colorScheme.tertiaryContainer,
-                      fg: theme.colorScheme.onTertiaryContainer,
-                    ),
-                  if (pedido.dataProducao != null && !produzHoje)
-                    _Chip(
-                      icon: Icons.precision_manufacturing_outlined,
-                      label: dataFmt.format(pedido.dataProducao!),
-                    ),
-                  if (atrasado)
-                    _Chip(
-                      icon: Icons.warning_amber_rounded,
-                      label: 'ATRASADO',
-                      bg: theme.colorScheme.errorContainer,
-                      fg: theme.colorScheme.onErrorContainer,
-                    )
-                  else if (vencendo)
-                    _Chip(
-                      icon: Icons.access_time,
-                      label: 'Vencendo',
-                      bg: const Color(0xFFFFE0B2),
-                      fg: const Color(0xFFE65100),
-                    ),
-                ],
+                children: chipsVisiveis,
               ),
-              if (!compacto) const SizedBox(height: 12),
+              if (!compacto) const SizedBox(height: AppSpacing.gapMd),
               if (!compacto)
                 Row(
                   children: [
-                    StatusPill(status: pedido.status),
-                    const SizedBox(width: 8),
                     PagamentoPill(statusPagamento: pedido.statusPagamento),
                     const Spacer(),
                     if (pedido.clienteTelefone != null && pedido.clienteTelefone!.isNotEmpty)
@@ -182,40 +157,49 @@ class PedidoCard extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool strong;
-  final Color? bg;
-  final Color? fg;
-  const _Chip({required this.icon, required this.label, this.strong = false, this.bg, this.fg});
-
+class _UrgenteChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bgColor = bg ?? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6);
-    final fgColor = fg ?? theme.colorScheme.onSurfaceVariant;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: fgColor),
-          const SizedBox(width: 5),
+          Icon(
+            Icons.flash_on,
+            size: 13,
+            color: theme.colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: 4),
           Text(
-            label,
+            'URGENTE',
             style: theme.textTheme.labelSmall?.copyWith(
-              color: fgColor,
-              fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
+              color: theme.colorScheme.onErrorContainer,
+              fontWeight: FontWeight.w700,
               fontSize: 11,
+              letterSpacing: 0.4,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _VencendoChip extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final palette = statusColors(context, StatusTone.warning);
+    return TintChip(
+      icon: Icons.access_time,
+      label: 'Vencendo',
+      bg: palette.bg,
+      fg: palette.fg,
     );
   }
 }

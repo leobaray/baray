@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import '../../models/cliente_fechamento.dart';
 import '../../state/cliente_fechamentos_provider.dart';
 import '../../state/clientes_provider.dart';
+import '../../theme/status_colors.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/pedido_card.dart';
+import '../../widgets/tint_chip.dart';
 import 'fechamento_fechar_dialog.dart';
 import 'fechamento_estender_dialog.dart';
 
@@ -123,18 +125,18 @@ class ClienteDetalheScreen extends ConsumerWidget {
                         ),
                       ],
                       const SizedBox(height: 16),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          _StatChip(
-                            label: '${cliente.totalPedidos} pedido${cliente.totalPedidos == 1 ? '' : 's'}',
+                          TintChip(
                             icon: Icons.assignment_outlined,
-                            theme: theme,
+                            label: '${cliente.totalPedidos} pedido${cliente.totalPedidos == 1 ? '' : 's'}',
                           ),
-                          const SizedBox(width: 12),
-                          _StatChip(
-                            label: moeda.format(cliente.totalGasto),
+                          TintChip(
                             icon: Icons.payments_outlined,
-                            theme: theme,
+                            label: moeda.format(cliente.totalGasto),
+                            strong: true,
                           ),
                         ],
                       ),
@@ -162,25 +164,37 @@ class ClienteDetalheScreen extends ConsumerWidget {
 
               // ── Histórico de pedidos ───────────────────────────────────
               const SizedBox(height: 16),
-              SectionHeader(icon: Icons.history, title: 'Histórico de pedidos'),
-              const SizedBox(height: 8),
-              if (cliente.pedidos == null || cliente.pedidos!.isEmpty)
-                EmptyState(
-                  icon: Icons.inbox_outlined,
-                  titulo: 'Nenhum pedido ainda',
-                  subtitulo: 'Toque em "Novo pedido" para criar',
-                )
-              else
-                ...cliente.pedidos!.map(
-                      (p) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: PedidoCard(
-                          pedido: p,
-                          onTap: () => context.push('/pedidos/${p.id}'),
-                          compacto: true,
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SectionHeader(icon: Icons.history, title: 'Histórico de pedidos'),
+                      const SizedBox(height: 12),
+                      if (cliente.pedidos == null || cliente.pedidos!.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'Nenhum pedido ainda',
+                            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline),
+                          ),
+                        )
+                      else
+                        ...cliente.pedidos!.map(
+                          (p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: PedidoCard(
+                              pedido: p,
+                              onTap: () => context.push('/pedidos/${p.id}'),
+                              compacto: true,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -210,7 +224,7 @@ class _FechamentoAtualCard extends ConsumerWidget {
     final f = fechamento;
 
     return Card(
-      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.15),
+      color: theme.colorScheme.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -218,13 +232,17 @@ class _FechamentoAtualCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.receipt_long, color: theme.colorScheme.primary, size: 22),
+                Icon(Icons.receipt_long, color: theme.colorScheme.onPrimaryContainer, size: 22),
                 const SizedBox(width: 10),
-                Text(
-                  'Ciclo #${f.numero} — ${f.statusLabel}',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                Expanded(
+                  child: Text(
+                    'Ciclo #${f.numero} — ${f.statusLabel}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
-                const Spacer(),
                 _StatusBadge(status: f.status),
               ],
             ),
@@ -412,37 +430,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _StatChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final ThemeData theme;
-  const _StatChip({required this.label, required this.icon, required this.theme});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StatusBadge extends StatelessWidget {
   final String status;
   const _StatusBadge({required this.status});
@@ -450,18 +437,19 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (color, fgColor, label) = switch (status) {
-      'aberto' => (Colors.green.shade100, Colors.green.shade900, 'Aberto'),
-      'estendido' => (Colors.orange.shade100, Colors.orange.shade900, 'Estendido'),
-      'fechado' => (Colors.grey.shade200, Colors.grey.shade700, 'Fechado'),
-      _ => (Colors.grey.shade200, Colors.grey.shade700, status),
+    final (tone, label) = switch (status) {
+      'aberto' => (StatusTone.success, 'Aberto'),
+      'estendido' => (StatusTone.warning, 'Estendido'),
+      'fechado' => (StatusTone.neutral, 'Fechado'),
+      _ => (StatusTone.neutral, status),
     };
+    final palette = statusColors(context, tone);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: palette.bg, borderRadius: BorderRadius.circular(8)),
       child: Text(
         label,
-        style: theme.textTheme.labelSmall?.copyWith(color: fgColor, fontWeight: FontWeight.w700),
+        style: theme.textTheme.labelSmall?.copyWith(color: palette.fg, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -476,19 +464,26 @@ class _ResumoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final onContainer = theme.colorScheme.onPrimaryContainer;
     return Row(
       children: [
         SizedBox(
           width: 100,
-          child: Text(label, style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          )),
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: onContainer.withValues(alpha: 0.7),
+            ),
+          ),
         ),
         Expanded(
-          child: Text(value, style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: valueColor,
-          )),
+          child: Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: valueColor ?? onContainer,
+            ),
+          ),
         ),
       ],
     );
