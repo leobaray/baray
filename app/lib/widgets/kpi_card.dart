@@ -27,7 +27,7 @@ class KpiCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -35,42 +35,51 @@ class KpiCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                       color: accentColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(icon, size: 20, color: accentColor),
+                    child: Icon(icon, size: 18, color: accentColor),
                   ),
                   const Spacer(),
                   if (onTap != null)
-                    Icon(Icons.arrow_forward, size: 16, color: theme.colorScheme.outline),
+                    Icon(Icons.arrow_forward, size: 14, color: theme.colorScheme.outline),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Text(
                 label,
-                style: theme.textTheme.labelMedium?.copyWith(
+                style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   letterSpacing: 0.4,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
-              Text(
-                valor,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                  color: theme.colorScheme.onSurface,
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  valor,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    color: theme.colorScheme.onSurface,
+                  ),
                 ),
               ),
               if (hint != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   hint!,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.outline,
+                    fontSize: 11,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ],

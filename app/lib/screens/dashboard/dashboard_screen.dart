@@ -68,8 +68,10 @@ class DashboardScreen extends ConsumerWidget {
           children: [
             _GreetingSkeleton(),
             const SizedBox(height: 20),
-            Row(
-              children: List.generate(4, (_) => const Expanded(child: Padding(padding: EdgeInsets.all(6), child: _KpiSkeleton()))),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: List.generate(4, (_) => const SizedBox(width: 160, child: _KpiSkeleton())),
             ),
             const SizedBox(height: 20),
             const _CardSkeleton(),
@@ -106,51 +108,51 @@ class DashboardScreen extends ConsumerWidget {
               // KPI cards
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final crossCount = constraints.maxWidth >= 720 ? 4 : 2;
-                  return GridView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossCount,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      mainAxisExtent: 140,
+                  final w = constraints.maxWidth;
+                  final crossCount = w >= 720 ? 4 : 2;
+                  final cardWidth = (w - 12 * (crossCount - 1)) / crossCount;
+                  final kpis = [
+                    KpiCard(
+                      icon: Icons.trending_up,
+                      label: 'FATURAMENTO DO MÊS',
+                      valor: moeda.format(stats.faturamentoMes),
+                      accent: Colors.green,
+                      onTap: () => context.push('/pedidos'),
                     ),
+                    KpiCard(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'A RECEBER',
+                      valor: moeda.format(stats.aReceber),
+                      accent: Colors.orange,
+                      onTap: () {
+                        ref.read(pedidosFiltroProvider.notifier).update(
+                              (f) => f.copyWith(statusPagamento: 'devendo'),
+                            );
+                        context.push('/pedidos');
+                      },
+                    ),
+                    KpiCard(
+                      icon: Icons.precision_manufacturing_outlined,
+                      label: 'PRODUÇÃO HOJE',
+                      valor: '${stats.emProducaoHoje.length}',
+                      hint: moeda.format(stats.emProducaoHoje.fold<double>(0, (s, p) => s + p.valor)),
+                      accent: theme.colorScheme.tertiary,
+                      onTap: () => context.push('/agenda'),
+                    ),
+                    KpiCard(
+                      icon: Icons.schedule,
+                      label: 'VENCEM EM 7 DIAS',
+                      valor: '${stats.prazosVencendo.length}',
+                      accent: theme.colorScheme.error,
+                      onTap: () => context.push('/pedidos'),
+                    ),
+                  ];
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
-                      KpiCard(
-                        icon: Icons.trending_up,
-                        label: 'FATURAMENTO DO MÊS',
-                        valor: moeda.format(stats.faturamentoMes),
-                        accent: Colors.green,
-                        onTap: () => context.push('/pedidos'),
-                      ),
-                      KpiCard(
-                        icon: Icons.account_balance_wallet_outlined,
-                        label: 'A RECEBER',
-                        valor: moeda.format(stats.aReceber),
-                        accent: Colors.orange,
-                        onTap: () {
-                          ref.read(pedidosFiltroProvider.notifier).update(
-                                (f) => f.copyWith(statusPagamento: 'devendo'),
-                              );
-                          context.push('/pedidos');
-                        },
-                      ),
-                      KpiCard(
-                        icon: Icons.precision_manufacturing_outlined,
-                        label: 'PRODUÇÃO HOJE',
-                        valor: '${stats.emProducaoHoje.length}',
-                        hint: moeda.format(stats.emProducaoHoje.fold<double>(0, (s, p) => s + p.valor)),
-                        accent: theme.colorScheme.tertiary,
-                        onTap: () => context.push('/agenda'),
-                      ),
-                      KpiCard(
-                        icon: Icons.schedule,
-                        label: 'VENCEM EM 7 DIAS',
-                        valor: '${stats.prazosVencendo.length}',
-                        accent: theme.colorScheme.error,
-                        onTap: () => context.push('/pedidos'),
-                      ),
+                      for (final kpi in kpis)
+                        SizedBox(width: cardWidth, child: kpi),
                     ],
                   );
                 },

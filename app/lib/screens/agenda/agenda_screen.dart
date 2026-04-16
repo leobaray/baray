@@ -50,20 +50,10 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
       appBar: AppBar(
         title: const Text('Agenda de produção'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: SegmentedButton<_Modo>(
-              segments: const [
-                ButtonSegment(value: _Modo.lista, label: Text('Lista'), icon: Icon(Icons.list)),
-                ButtonSegment(value: _Modo.semana, label: Text('Semana'), icon: Icon(Icons.view_week)),
-              ],
-              selected: {_modo},
-              onSelectionChanged: (s) => setState(() => _modo = s.first),
-              style: ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                textStyle: WidgetStatePropertyAll(theme.textTheme.labelMedium),
-              ),
-            ),
+          IconButton(
+            icon: Icon(_modo == _Modo.lista ? Icons.view_week : Icons.list),
+            tooltip: _modo == _Modo.lista ? 'Modo semana' : 'Modo lista',
+            onPressed: () => setState(() => _modo = _modo == _Modo.lista ? _Modo.semana : _Modo.lista),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
