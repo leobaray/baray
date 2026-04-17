@@ -10,30 +10,20 @@ import '../../models/pedido.dart';
 import '../../state/clientes_provider.dart';
 import '../../state/dashboard_provider.dart';
 import '../../state/pedidos_provider.dart';
+import '../../widgets/orcamento_inline.dart';
 
 class PedidoFormScreen extends ConsumerStatefulWidget {
   final String? pedidoId;
-  final String? clienteIdInicial;
-  final String? dataProducaoInicial;
-  final bool? autoAgendarInicial;
-  final String? pecaInicial;
-  final String? tecnicaInicial;
-  final String? quantidadeInicial;
-  final String? valorInicial;
-  final String? arteCoresInicial;
-  final bool? urgenteInicial;
+
+  /// Valores iniciais pra pedidos novos, vindos da query string (/pedidos/novo).
+  /// Chaves suportadas: cliente_id, data_producao, auto_agendar, peca, tecnica,
+  /// quantidade, valor, arte_cores, urgente.
+  final Map<String, String>? initial;
+
   const PedidoFormScreen({
     super.key,
     this.pedidoId,
-    this.clienteIdInicial,
-    this.dataProducaoInicial,
-    this.autoAgendarInicial,
-    this.pecaInicial,
-    this.tecnicaInicial,
-    this.quantidadeInicial,
-    this.valorInicial,
-    this.arteCoresInicial,
-    this.urgenteInicial,
+    this.initial,
   });
 
   @override
@@ -65,7 +55,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
 
   // Non-text state
   String? _clienteId;
-  DateTime? _dataChegada;
+  DateTime? _dataChegada = DateTime.now();
   DateTime? _dataProducao;
   DateTime? _dataEntregaCombinada;
   String _status = 'pendente';
@@ -100,38 +90,31 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     if (widget.pedidoId != null) {
       _carregar();
     } else {
-      if (widget.clienteIdInicial != null) {
-        _carregarClienteInicial();
+      final initial = widget.initial;
+      if (initial != null) {
+        if (initial['cliente_id'] != null) _carregarClienteInicial(initial['cliente_id']!);
+        _aplicarValoresIniciais(initial);
       }
-      _aplicarValoresIniciais();
     }
   }
 
-  void _aplicarValoresIniciais() {
-    if (widget.pecaInicial != null) _pecaCtl.text = widget.pecaInicial!;
-    if (widget.tecnicaInicial != null) _tecnicaCtl.text = widget.tecnicaInicial!;
-    if (widget.quantidadeInicial != null) _quantidadeCtl.text = widget.quantidadeInicial!;
-    if (widget.valorInicial != null) {
-      final v = double.tryParse(widget.valorInicial!);
-      if (v != null) {
-        _valorCtl.text = v.toStringAsFixed(2).replaceAll('.', ',');
-      } else {
-        _valorCtl.text = widget.valorInicial!;
-      }
+  void _aplicarValoresIniciais(Map<String, String> initial) {
+    if (initial['peca'] != null) _pecaCtl.text = initial['peca']!;
+    if (initial['tecnica'] != null) _tecnicaCtl.text = initial['tecnica']!;
+    if (initial['quantidade'] != null) _quantidadeCtl.text = initial['quantidade']!;
+    if (initial['valor'] != null) {
+      final v = double.tryParse(initial['valor']!);
+      _valorCtl.text = v != null
+          ? v.toStringAsFixed(2).replaceAll('.', ',')
+          : initial['valor']!;
     }
-    if (widget.arteCoresInicial != null) _arteCoresCtl.text = widget.arteCoresInicial!;
-    if (widget.urgenteInicial != null) _urgente = widget.urgenteInicial!;
-    if (widget.autoAgendarInicial != null) _autoAgendar = widget.autoAgendarInicial!;
-    if (widget.dataProducaoInicial != null) {
-      final parts = widget.dataProducaoInicial!.split('-');
-      if (parts.length == 3) {
-        final y = int.tryParse(parts[0]);
-        final m = int.tryParse(parts[1]);
-        final d = int.tryParse(parts[2]);
-        if (y != null && m != null && d != null) {
-          _dataProducao = DateTime(y, m, d);
-        }
-      }
+    if (initial['arte_cores'] != null) _arteCoresCtl.text = initial['arte_cores']!;
+    if (initial['urgente'] == 'true') _urgente = true;
+    if (initial['auto_agendar'] == 'false') _autoAgendar = false;
+    final dataProd = initial['data_producao'];
+    if (dataProd != null) {
+      final parsed = DateTime.tryParse(dataProd);
+      if (parsed != null) _dataProducao = parsed;
     }
   }
 
@@ -179,10 +162,10 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     _formaPagamento = p.formaPagamento;
   }
 
-  Future<void> _carregarClienteInicial() async {
+  Future<void> _carregarClienteInicial(String clienteId) async {
     try {
       final api = ref.read(apiClientProvider);
-      final c = await api.buscarCliente(widget.clienteIdInicial!);
+      final c = await api.buscarCliente(clienteId);
       _clienteId = c.id;
       _clienteCtl.text = c.nome;
       _autoClienteCtl.text = c.nome;
@@ -235,11 +218,17 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     if (escolhida != null) onPick(escolhida);
   }
 
-  Future<void> _abrirOrcamento() async {
-    final total = await context.push<double?>('/orcamento?from=pedido');
-    if (total != null && mounted) {
-      _valorCtl.text = total.toStringAsFixed(2).replaceAll('.', ',');
-    }
+  void _aplicarOrcamento(OrcamentoInlineAplicado r) {
+    setState(() {
+      _tecnicaCtl.text = r.tecnica;
+      _quantidadeCtl.text = r.quantidade.toString();
+      _arteCoresCtl.text = r.cores.toString();
+      _urgente = r.urgente;
+      _valorCtl.text = r.total.toStringAsFixed(2).replaceAll('.', ',');
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Valores do orçamento aplicados ✓'), duration: Duration(seconds: 2)),
+    );
   }
 
   String _montarDescricao() {
@@ -649,13 +638,12 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _abrirOrcamento,
-                    icon: const Icon(Icons.calculate_outlined, size: 18),
-                    label: const Text('Calcular orçamento'),
-                  ),
+                OrcamentoInline(
+                  tecnicaInicial: _tecnicaCtl.text.trim().isEmpty ? null : _tecnicaCtl.text.trim(),
+                  quantidadeInicial: int.tryParse(_quantidadeCtl.text.trim()) ?? 25,
+                  coresInicial: int.tryParse(_arteCoresCtl.text.trim()) ?? 1,
+                  urgenteInicial: _urgente,
+                  onAplicar: _aplicarOrcamento,
                 ),
                 const SizedBox(height: 12),
                 Row(

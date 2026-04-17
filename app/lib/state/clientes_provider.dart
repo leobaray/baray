@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../api/api_client.dart';
 import '../models/cliente.dart';
 
-final clientesBuscaProvider = StateProvider<String>((ref) => '');
+final clientesBuscaProvider = StateProvider.autoDispose<String>((ref) => '');
 
 final clientesProvider = FutureProvider.autoDispose<List<Cliente>>((ref) async {
   final api = ref.watch(apiClientProvider);

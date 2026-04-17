@@ -7,6 +7,7 @@ import '../../api/api_client.dart';
 import '../../models/pedido.dart';
 import '../../state/pedidos_provider.dart';
 import '../../state/dashboard_provider.dart';
+import '../../theme/breakpoints.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/pedido_card.dart';
 import '../../widgets/status_pill.dart';
@@ -50,7 +51,7 @@ class KanbanView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pedidos = ref.watch(pedidosProvider);
-    final wide = MediaQuery.sizeOf(context).width >= 720;
+    final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.compact;
 
     return pedidos.when(
       loading: () => const Center(child: CircularProgressIndicator()),

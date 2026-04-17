@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../api/api_client.dart';
 import '../../models/cliente_fechamento.dart';
 import '../../models/pedido.dart';
 import '../../state/cliente_fechamentos_provider.dart';
+import '../../widgets/fechamento_status_badge.dart';
 import '../../widgets/pedido_card.dart';
+import '../../widgets/resumo_row.dart';
 import 'fechamento_fechar_dialog.dart';
 import 'fechamento_estender_dialog.dart';
 
@@ -39,18 +42,11 @@ class _FechamentoDetalheScreenState extends ConsumerState<FechamentoDetalheScree
     setState(() => _carregando = true);
     try {
       final api = ref.read(apiClientProvider);
-      final result = await api.buscarFechamento(widget.clienteId, widget.fechamentoId);
-      // A API retorna o fechamento + pedidos no campo 'pedidos'
+      final result = await api.buscarFechamentoComPedidos(widget.clienteId, widget.fechamentoId);
       if (!mounted) return;
-      // Como buscarFechamento retorna ClienteFechamento, e a API inclui pedidos no JSON,
-      // precisamos extrair os pedidos separadamente
-      final dio = api.dio;
-      final r = await dio.get('/clientes/${widget.clienteId}/fechamentos/${widget.fechamentoId}');
-      final data = r.data as Map<String, dynamic>;
-      final pedidosJson = data['pedidos'] as List?;
       setState(() {
-        _fechamento = result;
-        _pedidos = pedidosJson?.map((p) => Pedido.fromJson(p as Map<String, dynamic>)).toList() ?? [];
+        _fechamento = result.fechamento;
+        _pedidos = result.pedidos;
         _carregando = false;
       });
     } catch (e) {
@@ -100,35 +96,35 @@ class _FechamentoDetalheScreenState extends ConsumerState<FechamentoDetalheScree
                         style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
                       ),
                       const Spacer(),
-                      _StatusBadge(status: f.status),
+                      FechamentoStatusBadge(status: f.status),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _ResumoRow(label: 'Abertura', value: dataFmt.format(f.dataAbertura)),
+                  ResumoRow(label: 'Abertura', value: dataFmt.format(f.dataAbertura)),
                   const SizedBox(height: 8),
-                  _ResumoRow(
+                  ResumoRow(
                     label: 'Previsto',
                     value: dataFmt.format(f.dataFechamentoPrevista),
                   ),
                   if (f.dataFechamentoReal != null) ...[
                     const SizedBox(height: 8),
-                    _ResumoRow(
+                    ResumoRow(
                       label: 'Fechado em',
                       value: dataFmt.format(f.dataFechamentoReal!),
                     ),
                   ],
                   const Divider(height: 24),
-                  _ResumoRow(label: 'Pedidos', value: '${f.totalPedidos}'),
+                  ResumoRow(label: 'Pedidos', value: '${f.totalPedidos}'),
                   const SizedBox(height: 8),
-                  _ResumoRow(label: 'Valor total', value: moeda.format(f.valorTotal)),
+                  ResumoRow(label: 'Valor total', value: moeda.format(f.valorTotal)),
                   const SizedBox(height: 8),
-                  _ResumoRow(
+                  ResumoRow(
                     label: 'Valor pago',
                     value: moeda.format(f.valorPago),
                     valueColor: theme.colorScheme.primary,
                   ),
                   const SizedBox(height: 8),
-                  _ResumoRow(
+                  ResumoRow(
                     label: 'Pendente',
                     value: moeda.format(f.valorPendente),
                     valueColor: f.valorPendente > 0 ? theme.colorScheme.error : theme.colorScheme.primary,
@@ -183,7 +179,7 @@ class _FechamentoDetalheScreenState extends ConsumerState<FechamentoDetalheScree
                 padding: const EdgeInsets.only(bottom: 8),
                 child: PedidoCard(
                   pedido: p,
-                  onTap: () {}, // Navegação futura
+                  onTap: () => context.push('/pedidos/${p.id}'),
                   compacto: true,
                 ),
               ),
@@ -219,54 +215,3 @@ class _FechamentoDetalheScreenState extends ConsumerState<FechamentoDetalheScree
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final String status;
-  const _StatusBadge({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final (color, fgColor, label) = switch (status) {
-      'aberto' => (Colors.green.shade100, Colors.green.shade900, 'Aberto'),
-      'estendido' => (Colors.orange.shade100, Colors.orange.shade900, 'Estendido'),
-      'fechado' => (Colors.grey.shade200, Colors.grey.shade700, 'Fechado'),
-      _ => (Colors.grey.shade200, Colors.grey.shade700, status),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(color: fgColor, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-}
-
-class _ResumoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
-  const _ResumoRow({required this.label, required this.value, this.valueColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(label, style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          )),
-        ),
-        Expanded(
-          child: Text(value, style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: valueColor,
-          )),
-        ),
-      ],
-    );
-  }
-}

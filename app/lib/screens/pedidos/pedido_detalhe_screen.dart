@@ -8,6 +8,7 @@ import '../../models/pedido.dart';
 import '../../state/pagamentos_provider.dart';
 import '../../state/pedidos_provider.dart';
 import '../../state/dashboard_provider.dart';
+import '../../theme/breakpoints.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/status_pill.dart';
 
@@ -89,7 +90,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
             ref.invalidate(pagamentosProvider(pedidoId));
           },
           child: LayoutBuilder(builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 900;
+            final wide = constraints.maxWidth >= AppBreakpoints.medium;
             final temArte = pedido.arteCores != null ||
                 pedido.arteTamanhoCm != null ||
                 (pedido.artePosicao?.isNotEmpty ?? false) ||

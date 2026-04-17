@@ -286,7 +286,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
             if (_fechamentoAtivo) ...[
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _fechamentoTipo,
+                initialValue: _fechamentoTipo,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de fechamento',
                   prefixIcon: Icon(Icons.event_repeat_outlined),
@@ -307,7 +307,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
               if (_fechamentoTipo == 'semanal') ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int>(
-                  value: _fechamentoDia,
+                  initialValue: _fechamentoDia,
                   decoration: const InputDecoration(
                     labelText: 'Dia da semana',
                     prefixIcon: Icon(Icons.calendar_view_week_outlined),
@@ -323,7 +323,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
               if (_fechamentoTipo == 'mensal') ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int>(
-                  value: _fechamentoDia,
+                  initialValue: _fechamentoDia,
                   decoration: const InputDecoration(
                     labelText: 'Dia do mês',
                     prefixIcon: Icon(Icons.calendar_month_outlined),

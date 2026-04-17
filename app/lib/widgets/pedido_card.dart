@@ -80,7 +80,7 @@ class PedidoCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: EdgeInsets.all(compacto ? AppSpacing.gapLg - 2 : 18),
+          padding: EdgeInsets.all(compacto ? 14 : 18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

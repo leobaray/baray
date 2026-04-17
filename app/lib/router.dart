@@ -77,23 +77,10 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/pedidos/novo',
-      pageBuilder: (c, s) {
-        final qp = s.uri.queryParameters;
-        return _fadeSlidePage(
-          child: PedidoFormScreen(
-            clienteIdInicial: qp['cliente_id'],
-            dataProducaoInicial: qp['data_producao'],
-            autoAgendarInicial: qp['auto_agendar'] == 'false' ? false : null,
-            pecaInicial: qp['peca'],
-            tecnicaInicial: qp['tecnica'],
-            quantidadeInicial: qp['quantidade'],
-            valorInicial: qp['valor'],
-            arteCoresInicial: qp['arte_cores'],
-            urgenteInicial: qp['urgente'] == 'true' ? true : null,
-          ),
-          name: 'novo-pedido',
-        );
-      },
+      pageBuilder: (c, s) => _fadeSlidePage(
+        child: PedidoFormScreen(initial: s.uri.queryParameters),
+        name: 'novo-pedido',
+      ),
     ),
     GoRoute(
       path: '/pedidos/:id',

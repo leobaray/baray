@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../models/pedido.dart';
 import '../../state/configuracoes_provider.dart';
 import '../../state/pedidos_provider.dart';
+import '../../theme/breakpoints.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/pedido_card.dart';
 import '../../widgets/shimmer_skeleton.dart';
@@ -263,7 +264,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 1200;
+              final wide = constraints.maxWidth >= AppBreakpoints.extraWide;
               if (wide) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -286,7 +287,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                 );
               }
               // Tablet / mobile: scroll horizontal com colunas 280px
-              if (constraints.maxWidth >= 720) {
+              if (constraints.maxWidth >= AppBreakpoints.compact) {
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),

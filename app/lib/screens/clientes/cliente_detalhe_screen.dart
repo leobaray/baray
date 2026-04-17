@@ -6,9 +6,10 @@ import 'package:intl/intl.dart';
 import '../../models/cliente_fechamento.dart';
 import '../../state/cliente_fechamentos_provider.dart';
 import '../../state/clientes_provider.dart';
-import '../../theme/status_colors.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/fechamento_status_badge.dart';
 import '../../widgets/pedido_card.dart';
+import '../../widgets/resumo_row.dart';
 import '../../widgets/tint_chip.dart';
 import 'fechamento_fechar_dialog.dart';
 import 'fechamento_estender_dialog.dart';
@@ -222,6 +223,7 @@ class _FechamentoAtualCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final f = fechamento;
+    final onContainer = theme.colorScheme.onPrimaryContainer;
 
     return Card(
       color: theme.colorScheme.primaryContainer,
@@ -232,37 +234,43 @@ class _FechamentoAtualCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.receipt_long, color: theme.colorScheme.onPrimaryContainer, size: 22),
+                Icon(Icons.receipt_long, color: onContainer, size: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'Ciclo #${f.numero} — ${f.statusLabel}',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.onPrimaryContainer,
+                      color: onContainer,
                     ),
                   ),
                 ),
-                _StatusBadge(status: f.status),
+                FechamentoStatusBadge(status: f.status),
               ],
             ),
             const SizedBox(height: 16),
-            _ResumoRow(label: 'Período', value: '${dataFmt.format(f.dataAbertura)} — ${dataFmt.format(f.dataFechamentoPrevista)}'),
+            ResumoRow(
+              label: 'Período',
+              value: '${dataFmt.format(f.dataAbertura)} — ${dataFmt.format(f.dataFechamentoPrevista)}',
+              onContainer: onContainer,
+            ),
             const SizedBox(height: 8),
-            _ResumoRow(label: 'Pedidos', value: '${f.totalPedidos}'),
+            ResumoRow(label: 'Pedidos', value: '${f.totalPedidos}', onContainer: onContainer),
             const SizedBox(height: 8),
-            _ResumoRow(label: 'Valor total', value: moeda.format(f.valorTotal)),
+            ResumoRow(label: 'Valor total', value: moeda.format(f.valorTotal), onContainer: onContainer),
             const SizedBox(height: 8),
-            _ResumoRow(
+            ResumoRow(
               label: 'Valor pago',
               value: moeda.format(f.valorPago),
               valueColor: theme.colorScheme.primary,
+              onContainer: onContainer,
             ),
             const SizedBox(height: 8),
-            _ResumoRow(
+            ResumoRow(
               label: 'Pendente',
               value: moeda.format(f.valorPendente),
               valueColor: f.valorPendente > 0 ? theme.colorScheme.error : theme.colorScheme.primary,
+              onContainer: onContainer,
             ),
             const SizedBox(height: 20),
             Row(
@@ -430,62 +438,3 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final String status;
-  const _StatusBadge({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final (tone, label) = switch (status) {
-      'aberto' => (StatusTone.success, 'Aberto'),
-      'estendido' => (StatusTone.warning, 'Estendido'),
-      'fechado' => (StatusTone.neutral, 'Fechado'),
-      _ => (StatusTone.neutral, status),
-    };
-    final palette = statusColors(context, tone);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: palette.bg, borderRadius: BorderRadius.circular(8)),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(color: palette.fg, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-}
-
-class _ResumoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
-  const _ResumoRow({required this.label, required this.value, this.valueColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final onContainer = theme.colorScheme.onPrimaryContainer;
-    return Row(
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: onContainer.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: valueColor ?? onContainer,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}

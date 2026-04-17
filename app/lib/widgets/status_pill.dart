@@ -58,29 +58,7 @@ class StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final info = statusInfo(context, status);
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: small ? 8 : 10, vertical: small ? 4 : 5),
-      decoration: BoxDecoration(
-        color: info.bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(info.icon, size: small ? 11 : 13, color: info.fg),
-          SizedBox(width: small ? 4 : 6),
-          Text(
-            info.label,
-            style: TextStyle(
-              color: info.fg,
-              fontSize: small ? 10 : 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ],
-      ),
-    );
+    return _Pill(bg: info.bg, fg: info.fg, icon: info.icon, label: info.label, small: small);
   }
 }
 
@@ -112,13 +90,30 @@ class PagamentoPill extends StatelessWidget {
           Icons.error_outline,
         ),
     };
+    return _Pill(bg: bg, fg: fg, icon: icon, label: label, small: small);
+  }
+}
 
+class _Pill extends StatelessWidget {
+  final Color bg;
+  final Color fg;
+  final IconData icon;
+  final String label;
+  final bool small;
+
+  const _Pill({
+    required this.bg,
+    required this.fg,
+    required this.icon,
+    required this.label,
+    required this.small,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: small ? 8 : 10, vertical: small ? 4 : 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

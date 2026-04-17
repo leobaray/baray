@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme/breakpoints.dart';
+
 class HomeShell extends StatelessWidget {
   final Widget child;
   const HomeShell({super.key, required this.child});
@@ -24,7 +26,7 @@ class HomeShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
     final index = _indexOf(location);
-    final wide = MediaQuery.sizeOf(context).width >= 720;
+    final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.compact;
 
     if (wide) {
       return Scaffold(

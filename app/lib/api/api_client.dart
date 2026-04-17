@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cliente.dart';
@@ -141,6 +142,19 @@ class ApiClient {
     return ClienteFechamento.fromJson(r.data as Map<String, dynamic>);
   }
 
+  Future<({ClienteFechamento fechamento, List<Pedido> pedidos})> buscarFechamentoComPedidos(
+    String clienteId,
+    String fechamentoId,
+  ) async {
+    final r = await dio.get('/clientes/$clienteId/fechamentos/$fechamentoId');
+    final data = r.data as Map<String, dynamic>;
+    final pedidosJson = (data['pedidos'] as List?) ?? const [];
+    return (
+      fechamento: ClienteFechamento.fromJson(data),
+      pedidos: pedidosJson.map((p) => Pedido.fromJson(p as Map<String, dynamic>)).toList(),
+    );
+  }
+
   Future<ClienteFechamento> fecharFechamento(String clienteId, String fechamentoId, {String? observacao}) async {
     final r = await dio.post(
       '/clientes/$clienteId/fechamentos/$fechamentoId/fechar',
@@ -155,13 +169,10 @@ class ApiClient {
     DateTime novaData, {
     String? observacao,
   }) async {
-    final dataStr = '${novaData.year.toString().padLeft(4, '0')}-'
-        '${novaData.month.toString().padLeft(2, '0')}-'
-        '${novaData.day.toString().padLeft(2, '0')}';
     final r = await dio.post(
       '/clientes/$clienteId/fechamentos/$fechamentoId/estender',
       data: {
-        'nova_data': dataStr,
+        'nova_data': DateFormat('yyyy-MM-dd').format(novaData),
         if (observacao != null) 'observacao': observacao,
       },
     );

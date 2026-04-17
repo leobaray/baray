@@ -13,7 +13,6 @@ enum StatusTone {
   warning,  // vencendo/parcial — âmbar
   danger,   // atrasado/devendo — vermelho
   neutral,  // sem estado/apagado — cinza
-  active,   // em produção — roxo
 }
 
 /// Retorna um par de cores coerente com o tema ativo (claro/escuro) pra o
@@ -42,9 +41,5 @@ StatusPalette statusColors(BuildContext context, StatusTone tone) {
       return dark
           ? const StatusPalette(Color(0xFF3A3A38), Color(0xFFBDBDBD))
           : const StatusPalette(Color(0xFFE0E0DD), Color(0xFF616161));
-    case StatusTone.active:
-      return dark
-          ? const StatusPalette(Color(0xFF2D1530), Color(0xFFCE93D8))
-          : const StatusPalette(Color(0xFFF3E5F5), Color(0xFF8E24AA));
   }
 }
