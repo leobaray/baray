@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/agenda.dart';
 import '../models/cliente.dart';
 import '../models/cliente_fechamento.dart';
 import '../models/configuracao.dart';
@@ -14,6 +15,13 @@ import '../models/pedido.dart';
 
 const String defaultServerUrl = 'http://10.150.60.100:8080';
 const String prefsKeyServerUrl = 'server_url';
+
+class ServerHealth {
+  final bool online;
+  final int latenciaMs;
+  final String? versao;
+  ServerHealth({required this.online, required this.latenciaMs, this.versao});
+}
 
 class ApiClient {
   final Dio dio;
@@ -38,6 +46,35 @@ class ApiClient {
       return r.statusCode == 200 && r.data is Map && r.data['ok'] == true;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Variante do [health] que também traz latência e versão do servidor.
+  Future<ServerHealth> healthInfo() async {
+    final sw = Stopwatch()..start();
+    try {
+      final r = await dio.get('/health');
+      sw.stop();
+      final data = r.data is Map ? r.data as Map : const {};
+      return ServerHealth(
+        online: data['ok'] == true,
+        latenciaMs: sw.elapsedMilliseconds,
+        versao: data['version'] as String?,
+      );
+    } catch (_) {
+      sw.stop();
+      return ServerHealth(online: false, latenciaMs: sw.elapsedMilliseconds);
+    }
+  }
+
+  /// Retorna o valor atual do contador `proximo_lote` — útil pra telas
+  /// administrativas mostrarem qual número um pedido novo vai pegar.
+  Future<int?> proximoLote() async {
+    try {
+      final r = await dio.get('/configuracoes/proximo_lote');
+      return (r.data as Map)['valor'] as int?;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -94,7 +131,7 @@ class ApiClient {
   Future<Pedido> confirmarSaida(String id, {String? entreguePor}) async {
     final r = await dio.post(
       '/pedidos/$id/saida',
-      data: {if (entreguePor != null) 'entregue_por': entreguePor},
+      data: {'entregue_por': ?entreguePor},
     );
     return Pedido.fromJson(r.data as Map<String, dynamic>);
   }
@@ -105,9 +142,15 @@ class ApiClient {
   }
 
   // ── Clientes ───────────────────────────────────────────────────────────
-  Future<List<Cliente>> listarClientes({String? busca}) async {
+  Future<List<Cliente>> listarClientes({
+    String? busca,
+    String? ordenar,
+    bool comDebito = false,
+  }) async {
     final r = await dio.get('/clientes', queryParameters: {
       if (busca != null && busca.isNotEmpty) 'busca': busca,
+      if (ordenar != null && ordenar.isNotEmpty) 'ordenar': ordenar,
+      if (comDebito) 'com_debito': 'true',
     });
     return (r.data as List).map((j) => Cliente.fromJson(j as Map<String, dynamic>)).toList();
   }
@@ -158,7 +201,7 @@ class ApiClient {
   Future<ClienteFechamento> fecharFechamento(String clienteId, String fechamentoId, {String? observacao}) async {
     final r = await dio.post(
       '/clientes/$clienteId/fechamentos/$fechamentoId/fechar',
-      data: {if (observacao != null) 'observacao': observacao},
+      data: {'observacao': ?observacao},
     );
     return ClienteFechamento.fromJson(r.data as Map<String, dynamic>);
   }
@@ -173,7 +216,7 @@ class ApiClient {
       '/clientes/$clienteId/fechamentos/$fechamentoId/estender',
       data: {
         'nova_data': DateFormat('yyyy-MM-dd').format(novaData),
-        if (observacao != null) 'observacao': observacao,
+        'observacao': ?observacao,
       },
     );
     return ClienteFechamento.fromJson(r.data as Map<String, dynamic>);
@@ -225,6 +268,15 @@ class ApiClient {
   Future<DashboardStats> dashboardStats() async {
     final r = await dio.get('/dashboard/stats');
     return DashboardStats.fromJson(r.data as Map<String, dynamic>);
+  }
+
+  // ── Agenda ─────────────────────────────────────────────────────────────
+  Future<AgendaOcupacao> agendaOcupacao(DateTime de, DateTime ate) async {
+    final r = await dio.get('/agenda/ocupacao', queryParameters: {
+      'de': DateFormat('yyyy-MM-dd').format(de),
+      'ate': DateFormat('yyyy-MM-dd').format(ate),
+    });
+    return AgendaOcupacao.fromJson(r.data as Map<String, dynamic>);
   }
 }
 

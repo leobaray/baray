@@ -33,6 +33,23 @@ Router pagamentosRouter(Db db) {
       return json({'error': 'valor é obrigatório e deve ser positivo'}, status: 400);
     }
 
+    // Validar que o pagamento não excede o saldo devedor.
+    final pedidoRows = db.raw.select(
+      'SELECT valor, valor_pago FROM pedidos WHERE id = ?',
+      [pedidoId],
+    );
+    if (pedidoRows.isEmpty) {
+      return json({'error': 'pedido não encontrado'}, status: 404);
+    }
+    final pedidoValor = (pedidoRows.first['valor'] as num).toDouble();
+    final pedidoPago = ((pedidoRows.first['valor_pago'] as num?) ?? 0).toDouble();
+    final saldo = pedidoValor - pedidoPago;
+    if (valor > saldo + 0.01) {
+      return json({
+        'error': 'valor (R\$ ${valor.toStringAsFixed(2)}) excede o saldo devedor (R\$ ${saldo.toStringAsFixed(2)})',
+      }, status: 400);
+    }
+
     final id = uuid.v4();
     final quando = (body['quando'] as String?) ?? DateTime.now().toIso8601String();
     db.raw.execute(

@@ -10,6 +10,8 @@ class PedidosFiltro {
   final String? busca;
   final bool urgenteOnly;
   final String ordenar;
+  final String? de;  // YYYY-MM-DD (filtro data_producao >=)
+  final String? ate; // YYYY-MM-DD (filtro data_producao <=)
 
   const PedidosFiltro({
     this.status,
@@ -17,6 +19,8 @@ class PedidosFiltro {
     this.busca,
     this.urgenteOnly = false,
     this.ordenar = 'lote',
+    this.de,
+    this.ate,
   });
 
   PedidosFiltro copyWith({
@@ -25,9 +29,12 @@ class PedidosFiltro {
     String? busca,
     bool? urgenteOnly,
     String? ordenar,
+    String? de,
+    String? ate,
     bool resetStatus = false,
     bool resetStatusPagamento = false,
     bool resetBusca = false,
+    bool resetPeriodo = false,
   }) {
     return PedidosFiltro(
       status: resetStatus ? null : (status ?? this.status),
@@ -35,11 +42,18 @@ class PedidosFiltro {
       busca: resetBusca ? null : (busca ?? this.busca),
       urgenteOnly: urgenteOnly ?? this.urgenteOnly,
       ordenar: ordenar ?? this.ordenar,
+      de: resetPeriodo ? null : (de ?? this.de),
+      ate: resetPeriodo ? null : (ate ?? this.ate),
     );
   }
 
   bool get algumFiltroAtivo =>
-      status != null || statusPagamento != null || (busca?.isNotEmpty ?? false) || urgenteOnly;
+      status != null ||
+      statusPagamento != null ||
+      (busca?.isNotEmpty ?? false) ||
+      urgenteOnly ||
+      de != null ||
+      ate != null;
 }
 
 final pedidosFiltroProvider = StateProvider<PedidosFiltro>((ref) => const PedidosFiltro());
@@ -53,6 +67,8 @@ final pedidosProvider = FutureProvider.autoDispose<List<Pedido>>((ref) async {
     busca: filtro.busca,
     urgente: filtro.urgenteOnly ? true : null,
     ordenar: filtro.ordenar,
+    de: filtro.de,
+    ate: filtro.ate,
   );
 });
 

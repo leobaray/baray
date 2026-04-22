@@ -27,7 +27,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
       appBar: AppBar(
         title: pedidoAsync.when(
           loading: () => const Text('Pedido'),
-          error: (_, __) => const Text('Pedido'),
+          error: (_, _) => const Text('Pedido'),
           data: (p) => Text(p.loteFormatado),
         ),
         actions: [
@@ -38,7 +38,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
           ),
           pedidoAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
             data: (_) => PopupMenuButton<String>(
               onSelected: (action) => _handleMenu(context, ref, action, pedidoAsync.value!),
               itemBuilder: (ctx) => [
@@ -390,19 +390,19 @@ class PedidoDetalheScreen extends ConsumerWidget {
     } else if (action == 'excluir') {
       final ok = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogCtx) => AlertDialog(
           title: const Text('Excluir pedido?'),
           content: Text('${pedido.loteFormatado} — ${pedido.clienteNome}'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(dialogCtx, false),
               child: const Text('Cancelar'),
             ),
             FilledButton.tonal(
               style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                backgroundColor: Theme.of(dialogCtx).colorScheme.errorContainer,
               ),
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(dialogCtx, true),
               child: const Text('Excluir'),
             ),
           ],
@@ -476,16 +476,19 @@ class _PagamentosList extends ConsumerWidget {
                       onPressed: () async {
                         final ok = await showDialog<bool>(
                           context: context,
-                          builder: (_) => AlertDialog(
+                          builder: (dialogCtx) => AlertDialog(
                             title: const Text('Remover pagamento?'),
                             content: Text(moeda.format(p.valor)),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+                              TextButton(
+                                onPressed: () => Navigator.pop(dialogCtx, false),
+                                child: const Text('Cancelar'),
+                              ),
                               FilledButton.tonal(
                                 style: FilledButton.styleFrom(
                                   backgroundColor: theme.colorScheme.errorContainer,
                                 ),
-                                onPressed: () => Navigator.pop(context, true),
+                                onPressed: () => Navigator.pop(dialogCtx, true),
                                 child: const Text('Remover'),
                               ),
                             ],

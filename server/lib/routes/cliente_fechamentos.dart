@@ -344,11 +344,19 @@ String _calcularProximaDataFechamento(
     case 'mensal':
       final diaMensal = dia ?? 1;
       final diaAtualM = referencia.day;
+      int anoAlvo;
+      int mesAlvo;
       if (diaAtualM < diaMensal) {
-        proxima = DateTime(referencia.year, referencia.month, diaMensal);
+        anoAlvo = referencia.year;
+        mesAlvo = referencia.month;
       } else {
-        proxima = DateTime(referencia.year, referencia.month + 1, diaMensal);
+        anoAlvo = referencia.month == 12 ? referencia.year + 1 : referencia.year;
+        mesAlvo = referencia.month == 12 ? 1 : referencia.month + 1;
       }
+      // Último dia real do mês alvo (evita que dia 31 em fev vire 03/mar).
+      final ultimoDiaMes = DateTime(anoAlvo, mesAlvo + 1, 0).day;
+      final diaFinal = diaMensal > ultimoDiaMes ? ultimoDiaMes : diaMensal;
+      proxima = DateTime(anoAlvo, mesAlvo, diaFinal);
       break;
 
     case 'data_fixa':

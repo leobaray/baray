@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../db.dart';
 import '../models/pedido.dart';
 import '../agendador.dart';
+import '../pagamentos_util.dart';
 
 Router pedidosRouter(Db db) {
   final r = Router();
@@ -106,13 +107,15 @@ Router pedidosRouter(Db db) {
     // Se veio cliente_id mas não nome, buscar nome
     String? clienteId = body['cliente_id'] as String?;
 
-    // Se veio cliente_nome mas não id, tentar casar com clientes existentes
+    // Se veio cliente_nome mas não id, tentar casar com clientes existentes.
+    // Só vincula automaticamente se houver UM único match — senão deixa
+    // cliente_id null pra não associar ao cliente errado.
     if (clienteId == null && clienteNome.isNotEmpty) {
       final m = db.raw.select(
-        'SELECT id FROM clientes WHERE lower(nome) = lower(?)',
+        'SELECT id FROM clientes WHERE lower(nome) = lower(?) LIMIT 2',
         [clienteNome],
       );
-      if (m.isNotEmpty) clienteId = m.first['id'] as String;
+      if (m.length == 1) clienteId = m.first['id'] as String;
     }
 
     final id = uuid.v4();
@@ -142,8 +145,8 @@ Router pedidosRouter(Db db) {
         data_chegada, data_producao, prazo_dias, agendamento_fixo,
         forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por,
         forma_pagamento, valor_pago, sinal_pago, status_pagamento,
-        status, urgente, observacao, fechamento_id, criado_em, atualizado_em
-      ) VALUES (?,?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?)
+        status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em
+      ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?,?,?)
     ''', [
       id,
       lote,
@@ -179,6 +182,8 @@ Router pedidosRouter(Db db) {
       body['status'] ?? 'pendente',
       urgente,
       body['observacao'],
+      body['regiao'],
+      body['tipo_peca'],
       fechamentoId,
       now,
       now,
@@ -202,6 +207,11 @@ Router pedidosRouter(Db db) {
         now,
         fechamentoId,
       ]);
+    }
+
+    // Se o cliente enviou valor_pago inicial, reconciliar status_pagamento.
+    if (body['valor_pago'] != null || body['status_pagamento'] != null) {
+      recalcularPagamento(db.raw, id);
     }
 
     // Se auto_agendar foi pedido ou data_producao não foi passada
@@ -253,7 +263,7 @@ Router pedidosRouter(Db db) {
       'data_chegada', 'data_producao', 'prazo_dias', 'agendamento_fixo',
       'forma_entrega', 'endereco_entrega', 'data_entrega_combinada', 'entregue_em', 'entregue_por',
       'forma_pagamento', 'valor_pago', 'sinal_pago', 'status_pagamento',
-      'status', 'urgente', 'observacao', 'fechamento_id',
+      'status', 'urgente', 'observacao', 'regiao', 'tipo_peca', 'fechamento_id',
     };
 
     final sets = <String>[];
@@ -276,6 +286,12 @@ Router pedidosRouter(Db db) {
       db.raw.execute('UPDATE pedidos SET ${sets.join(', ')} WHERE id = ?', args);
     }
 
+    // Se o valor (ou valor_pago via body) mudou, reconciliar status_pagamento
+    // com o total de pagamentos registrados.
+    if (body.containsKey('valor') || body.containsKey('valor_pago')) {
+      recalcularPagamento(db.raw, id);
+    }
+
     final updated = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]).first;
     return json(Pedido.fromRow(updated).toJson());
   });
@@ -293,6 +309,12 @@ Router pedidosRouter(Db db) {
     final rows = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]);
     if (rows.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
     final p = Pedido.fromRow(rows.first);
+    if (p.status == 'entregue' || p.entregueEm != null) {
+      return json({'error': 'pedido já foi entregue — não pode reagendar'}, status: 400);
+    }
+    if (p.valor <= 0) {
+      return json({'error': 'pedido sem valor — não pode agendar'}, status: 400);
+    }
     try {
       final dc = p.dataChegada != null ? DateTime.tryParse(p.dataChegada!) : null;
       final inicio = agendador.agendar(
@@ -321,13 +343,18 @@ Router pedidosRouter(Db db) {
 
   // ── Confirmar saída ───────────────────────────────────────────────────
   r.post('/<id>/saida', (Request req, String id) async {
-    final body = req.url.queryParameters.isNotEmpty || req.contentLength == 0
+    final raw = await req.readAsString();
+    final body = raw.isEmpty
         ? <String, dynamic>{}
-        : jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+        : jsonDecode(raw) as Map<String, dynamic>;
     final porQuem = body['entregue_por'] as String?;
 
-    final rows = db.raw.select('SELECT id FROM pedidos WHERE id = ?', [id]);
+    final rows = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]);
     if (rows.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
+    final p = Pedido.fromRow(rows.first);
+    if (p.status == 'entregue' || p.entregueEm != null) {
+      return json({'error': 'pedido já foi entregue'}, status: 400);
+    }
 
     final now = DateTime.now().toIso8601String();
     db.raw.execute(
@@ -369,8 +396,8 @@ Router pedidosRouter(Db db) {
         data_chegada, data_producao, prazo_dias, agendamento_fixo,
         forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por,
         forma_pagamento, valor_pago, sinal_pago, status_pagamento,
-        status, urgente, observacao, fechamento_id, criado_em, atualizado_em
-      ) VALUES (?,?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?)
+        status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em
+      ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?,?,?)
     ''', [
       novoId,
       novoLote,
@@ -406,10 +433,32 @@ Router pedidosRouter(Db db) {
       'pendente',
       orig.urgente ? 1 : 0,
       orig.observacao,
+      orig.regiao,
+      orig.tipoPeca,
       novoFechamentoId,
       now,
       now,
     ]);
+
+    // Atualizar agregados do fechamento se o novo pedido foi associado.
+    if (novoFechamentoId != null) {
+      final agg = db.raw.select(
+        'SELECT COUNT(*) as total, COALESCE(SUM(valor), 0) as vt, COALESCE(SUM(valor_pago), 0) as vp '
+        'FROM pedidos WHERE fechamento_id = ?',
+        [novoFechamentoId],
+      ).first;
+      db.raw.execute('''
+        UPDATE cliente_fechamentos
+        SET total_pedidos = ?, valor_total = ?, valor_pago = ?, atualizado_em = ?
+        WHERE id = ?
+      ''', [
+        agg['total'] as int,
+        (agg['vt'] as num).toDouble(),
+        (agg['vp'] as num).toDouble(),
+        now,
+        novoFechamentoId,
+      ]);
+    }
 
     final created = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [novoId]).first;
     return json(Pedido.fromRow(created).toJson(), status: 201);

@@ -20,26 +20,27 @@ enum StatusTone {
 /// principal — o próprio StatusPill de pedido já tem paleta dedicada.
 StatusPalette statusColors(BuildContext context, StatusTone tone) {
   final dark = Theme.of(context).brightness == Brightness.dark;
+  // Paleta dessaturada — cores transmitem estado sem competir com o conteúdo.
   switch (tone) {
     case StatusTone.info:
       return dark
-          ? const StatusPalette(Color(0xFF0D2137), Color(0xFF90CAF9))
-          : const StatusPalette(Color(0xFFE3F2FD), Color(0xFF1976D2));
+          ? const StatusPalette(Color(0xFF1B2838), Color(0xFF89B4D6))
+          : const StatusPalette(Color(0xFFEAF0F7), Color(0xFF3D5A80));
     case StatusTone.success:
       return dark
-          ? const StatusPalette(Color(0xFF0D3318), Color(0xFFA5D6A7))
-          : const StatusPalette(Color(0xFFE8F5E9), Color(0xFF2E7D32));
+          ? const StatusPalette(Color(0xFF1C2E22), Color(0xFF9CBFA3))
+          : const StatusPalette(Color(0xFFE6F1E9), Color(0xFF446B4E));
     case StatusTone.warning:
       return dark
-          ? const StatusPalette(Color(0xFF3D2E00), Color(0xFFFFCA28))
-          : const StatusPalette(Color(0xFFFFF3E0), Color(0xFFE65100));
+          ? const StatusPalette(Color(0xFF2B2419), Color(0xFFDEB887))
+          : const StatusPalette(Color(0xFFF5EDE0), Color(0xFF8B6914));
     case StatusTone.danger:
       return dark
-          ? const StatusPalette(Color(0xFF3D0E0E), Color(0xFFFF8A80))
-          : const StatusPalette(Color(0xFFFFEBEE), Color(0xFFC62828));
+          ? const StatusPalette(Color(0xFF2E1D1D), Color(0xFFD99999))
+          : const StatusPalette(Color(0xFFF5E5E5), Color(0xFF8B4444));
     case StatusTone.neutral:
       return dark
-          ? const StatusPalette(Color(0xFF3A3A38), Color(0xFFBDBDBD))
-          : const StatusPalette(Color(0xFFE0E0DD), Color(0xFF616161));
+          ? const StatusPalette(Color(0xFF2C2C2A), Color(0xFFAAAAA3))
+          : const StatusPalette(Color(0xFFEEEEE9), Color(0xFF6B6B63));
   }
 }

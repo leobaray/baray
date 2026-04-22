@@ -6,6 +6,7 @@ import 'package:shelf/shelf_io.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import 'package:empresa_server/db.dart';
+import 'package:empresa_server/routes/agenda.dart';
 import 'package:empresa_server/routes/clientes.dart';
 import 'package:empresa_server/routes/configuracoes.dart';
 import 'package:empresa_server/routes/dashboard.dart';
@@ -31,6 +32,7 @@ Future<void> main(List<String> args) async {
   root.mount('/orcamento', orcamentoRouter(db).call);
   root.mount('/pagamentos', pagamentosRouter(db).call);
   root.mount('/dashboard', dashboardRouter(db).call);
+  root.mount('/agenda', agendaRouter(db).call);
 
   final handler = const Pipeline()
       .addMiddleware(_logRequests())

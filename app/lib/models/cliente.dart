@@ -17,6 +17,7 @@ class Cliente {
 
   final int totalPedidos;
   final double totalGasto;
+  final double valorDevendo;
   final List<Pedido>? pedidos;
   final ClienteFechamento? fechamentoAtual;
 
@@ -35,6 +36,7 @@ class Cliente {
     required this.atualizadoEm,
     this.totalPedidos = 0,
     this.totalGasto = 0,
+    this.valorDevendo = 0,
     this.pedidos,
     this.fechamentoAtual,
   });
@@ -57,6 +59,7 @@ class Cliente {
       atualizadoEm: DateTime.parse(j['atualizado_em'] as String),
       totalPedidos: (j['total_pedidos'] as int?) ?? 0,
       totalGasto: ((j['total_gasto'] as num?) ?? 0).toDouble(),
+      valorDevendo: ((j['valor_devendo'] as num?) ?? 0).toDouble(),
       pedidos: pedidosJson?.map((p) => Pedido.fromJson(p as Map<String, dynamic>)).toList(),
       fechamentoAtual: fechamentoAtualJson != null
           ? ClienteFechamento.fromJson(fechamentoAtualJson)

@@ -55,11 +55,13 @@ class _OrcamentoScreenState extends ConsumerState<OrcamentoScreen> {
     final r = _resultado;
     if (r == null) return;
     final qp = <String, String>{
-      if (_tecnica != null) 'tecnica': _tecnica!,
+      'tecnica': ?_tecnica,
+      'regiao': _regiao,
       'quantidade': r.quantidade.toString(),
       'arte_cores': _cores.toString(),
       'valor': r.total.toStringAsFixed(2),
       if (_urgente) 'urgente': 'true',
+      'tipo_peca': ?_tipoPeca,
     };
     final query = qp.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
     context.push('/pedidos/novo?$query');

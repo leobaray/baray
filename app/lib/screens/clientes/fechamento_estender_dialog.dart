@@ -103,7 +103,7 @@ class _FechamentoEstenderDialogState extends ConsumerState<FechamentoEstenderDia
                   labelText: 'Nova data de fechamento *',
                   prefixIcon: const Icon(Icons.calendar_today_outlined),
                   suffixIcon: _novaData != null
-                      ? const Icon(Icons.check_circle, color: Colors.green)
+                      ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
                       : null,
                 ),
                 child: Text(

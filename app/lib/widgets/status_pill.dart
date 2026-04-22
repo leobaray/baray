@@ -10,40 +10,42 @@ class StatusInfo {
 
 StatusInfo statusInfo(BuildContext context, String status) {
   final dark = Theme.of(context).brightness == Brightness.dark;
+  // Paleta sossegada: tons dessaturados, fundo com ~8% de saturação.
+  // Mantém clareza de leitura sem gritar.
   return switch (status) {
     'pendente' => StatusInfo(
-        bg: dark ? const Color(0xFF3D2E00) : const Color(0xFFFFF3E0),
-        fg: dark ? const Color(0xFFFFB74D) : const Color(0xFFE67E00),
+        bg: dark ? const Color(0xFF2B2419) : const Color(0xFFF5EDE0),
+        fg: dark ? const Color(0xFFDEB887) : const Color(0xFF8B6914),
         label: 'Pendente',
         icon: Icons.schedule_outlined,
       ),
     'agendado' => StatusInfo(
-        bg: dark ? const Color(0xFF0D2137) : const Color(0xFFE3F2FD),
-        fg: dark ? const Color(0xFF90CAF9) : const Color(0xFF1976D2),
+        bg: dark ? const Color(0xFF1B2838) : const Color(0xFFEAF0F7),
+        fg: dark ? const Color(0xFF89B4D6) : const Color(0xFF3D5A80),
         label: 'Agendado',
         icon: Icons.event_outlined,
       ),
     'producao' => StatusInfo(
-        bg: dark ? const Color(0xFF2D1530) : const Color(0xFFF3E5F5),
-        fg: dark ? const Color(0xFFCE93D8) : const Color(0xFF8E24AA),
+        bg: dark ? const Color(0xFF1E2E3E) : const Color(0xFFE3EEF5),
+        fg: dark ? const Color(0xFF7FB3CC) : const Color(0xFF2F6486),
         label: 'Em produção',
         icon: Icons.precision_manufacturing_outlined,
       ),
     'concluido' => StatusInfo(
-        bg: dark ? const Color(0xFF0D3318) : const Color(0xFFE8F5E9),
-        fg: dark ? const Color(0xFFA5D6A7) : const Color(0xFF2E7D32),
+        bg: dark ? const Color(0xFF1C2E22) : const Color(0xFFE6F1E9),
+        fg: dark ? const Color(0xFF9CBFA3) : const Color(0xFF446B4E),
         label: 'Concluído',
         icon: Icons.check_circle_outline,
       ),
     'entregue' => StatusInfo(
-        bg: dark ? const Color(0xFF003D2A) : const Color(0xFFDFF5EC),
-        fg: dark ? const Color(0xFF66D5AE) : const Color(0xFF00796B),
+        bg: dark ? const Color(0xFF0F2E28) : const Color(0xFFDFEFE9),
+        fg: dark ? const Color(0xFF7FBFAF) : const Color(0xFF2E6B5C),
         label: 'Entregue',
         icon: Icons.local_shipping_outlined,
       ),
     _ => StatusInfo(
-        bg: dark ? const Color(0xFF3A3A38) : const Color(0xFFE0E0DD),
-        fg: dark ? Colors.grey.shade400 : Colors.grey.shade700,
+        bg: dark ? const Color(0xFF2C2C2A) : const Color(0xFFEEEEE9),
+        fg: dark ? const Color(0xFFAAAAA3) : const Color(0xFF6B6B63),
         label: status,
         icon: Icons.circle_outlined,
       ),
@@ -72,20 +74,20 @@ class PagamentoPill extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final (bg, fg, label, icon) = switch (statusPagamento) {
       'pago' => (
-          dark ? const Color(0xFF0D3318) : const Color(0xFFE8F5E9),
-          dark ? const Color(0xFFA5D6A7) : const Color(0xFF2E7D32),
+          dark ? const Color(0xFF1C2E22) : const Color(0xFFE6F1E9),
+          dark ? const Color(0xFF9CBFA3) : const Color(0xFF446B4E),
           'Pago',
           Icons.check_circle,
         ),
       'parcial' => (
-          dark ? const Color(0xFF3D2E00) : const Color(0xFFFFF8E1),
-          dark ? const Color(0xFFFFCA28) : const Color(0xFFF57F17),
+          dark ? const Color(0xFF2B2419) : const Color(0xFFF5EDE0),
+          dark ? const Color(0xFFDEB887) : const Color(0xFF8B6914),
           'Parcial',
           Icons.pending,
         ),
       _ => (
-          dark ? const Color(0xFF3D0E0E) : const Color(0xFFFFEBEE),
-          dark ? const Color(0xFFFF8A80) : const Color(0xFFC62828),
+          dark ? const Color(0xFF2E1D1D) : const Color(0xFFF5E5E5),
+          dark ? const Color(0xFFD99999) : const Color(0xFF8B4444),
           'Devendo',
           Icons.error_outline,
         ),

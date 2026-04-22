@@ -4,17 +4,21 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/dashboard.dart';
+import '../../models/pedido.dart';
 import '../../state/dashboard_provider.dart';
 import '../../state/pedidos_provider.dart';
+import '../../theme/density.dart';
+import '../../theme/status_colors.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/kpi_card.dart';
-import '../../widgets/pedido_card.dart';
+import '../../widgets/pedido_form_sheet.dart';
+import '../../widgets/pedido_row.dart';
 import '../../widgets/shimmer_skeleton.dart';
 
-String _saudacao() {
-  final h = DateTime.now().hour;
-  if (h < 12) return 'Bom dia';
-  if (h < 18) return 'Boa tarde';
+const double _kWide = 1100;
+
+String _saudacao(int hora) {
+  if (hora < 12) return 'Bom dia';
+  if (hora < 18) return 'Boa tarde';
   return 'Boa noite';
 }
 
@@ -24,27 +28,20 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboard = ref.watch(dashboardProvider);
-    final theme = Theme.of(context);
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final dataExtensa = DateFormat("EEEE, d 'de' MMMM 'de' y", 'pt_BR');
-    final diaCurto = DateFormat('EEE d', 'pt_BR');
-    final wide = MediaQuery.sizeOf(context).width >= 720;
 
     return Scaffold(
       appBar: AppBar(
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!wide) ...[
-              Icon(Icons.print_outlined, color: theme.colorScheme.primary, size: 24),
-              const SizedBox(width: 8),
-            ],
+            Icon(Icons.print_outlined, color: Theme.of(context).colorScheme.primary, size: 22),
+            const SizedBox(width: 8),
             Text(
               'Serigrafia Baray',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: theme.colorScheme.primary,
-                letterSpacing: -0.5,
+                color: Theme.of(context).colorScheme.primary,
+                letterSpacing: -0.3,
               ),
             ),
           ],
@@ -58,163 +55,455 @@ class DashboardScreen extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/pedidos/novo'),
+        onPressed: () => PedidoFormSheet.show(context),
         icon: const Icon(Icons.add),
         label: const Text('Novo pedido'),
       ),
       body: dashboard.when(
-        loading: () => ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-          children: [
-            _GreetingSkeleton(),
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: List.generate(4, (_) => const SizedBox(width: 160, child: _KpiSkeleton())),
-            ),
-            const SizedBox(height: 20),
-            const _CardSkeleton(),
-            const SizedBox(height: 16),
-            const _CardSkeleton(),
-          ],
-        ),
+        loading: () => const _LoadingState(),
         error: (e, _) => ErrorState(
           message: e.toString(),
           onRetry: () => ref.invalidate(dashboardProvider),
         ),
         data: (stats) => RefreshIndicator(
           onRefresh: () async => ref.invalidate(dashboardProvider),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-            children: [
-              // Saudação
-              Text(
-                _saudacao(),
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= _kWide;
+              return wide ? _buildWide(context, ref, stats) : _buildNarrow(context, ref, stats);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Desktop ≥1100 — 2 colunas ────────────────────────────────────────────
+  Widget _buildWide(BuildContext context, WidgetRef ref, DashboardStats stats) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 96),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SaudacaoBanner(stats: stats),
+          const SizedBox(height: 14),
+          _KpisRow(stats: stats),
+          const SizedBox(height: 14),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _DestaquesCard(stats: stats),
                 ),
+                const SizedBox(width: 14),
+                Expanded(
+                  flex: 2,
+                  child: _OcupacaoCard(stats: stats),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Mobile/tablet — coluna ────────────────────────────────────────────────
+  Widget _buildNarrow(BuildContext context, WidgetRef ref, DashboardStats stats) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 96),
+      children: [
+        _SaudacaoBanner(stats: stats),
+        const SizedBox(height: 12),
+        _KpisRow(stats: stats),
+        const SizedBox(height: 12),
+        _DestaquesCard(stats: stats),
+        const SizedBox(height: 12),
+        _OcupacaoCard(stats: stats),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BANNER DE SAUDAÇÃO
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SaudacaoBanner extends StatelessWidget {
+  final DashboardStats stats;
+  const _SaudacaoBanner({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final hora = DateTime.now().hour;
+    final dataExtensa = DateFormat("EEEE, d 'de' MMMM", 'pt_BR');
+    final data = toBeginningOfSentenceCase(dataExtensa.format(DateTime.now()));
+
+    final emProducao = stats.emProducaoHoje.length;
+    final urgentes = stats.urgentes.length;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            cs.primaryContainer.withValues(alpha: 0.35),
+            cs.primaryContainer.withValues(alpha: 0.12),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.22)),
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final estreito = c.maxWidth < 520;
+          final highlight = _HighlightBadge(
+            emProducao: emProducao,
+            urgentes: urgentes,
+          );
+          final texto = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _saudacao(hora),
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      height: 1.05,
+                      color: cs.onSurface,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                data,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+            ],
+          );
+
+          if (estreito) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                texto,
+                const SizedBox(height: 10),
+                highlight,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: texto),
+              const SizedBox(width: 16),
+              highlight,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HighlightBadge extends StatelessWidget {
+  final int emProducao;
+  final int urgentes;
+  const _HighlightBadge({required this.emProducao, required this.urgentes});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    if (emProducao == 0 && urgentes == 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_outline, size: 16, color: cs.primary),
+            const SizedBox(width: 8),
+            Text(
+              'Nenhum pedido urgente hoje',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (emProducao > 0) ...[
+            _HighlightMetric(
+              label: 'Hoje',
+              valor: '$emProducao',
+              icon: Icons.precision_manufacturing_outlined,
+              color: cs.primary,
+            ),
+          ],
+          if (emProducao > 0 && urgentes > 0) ...[
+            const SizedBox(width: 14),
+            Container(width: 1, height: 24, color: cs.outlineVariant),
+            const SizedBox(width: 14),
+          ],
+          if (urgentes > 0)
+            _HighlightMetric(
+              label: 'Urgentes',
+              valor: '$urgentes',
+              icon: Icons.local_fire_department,
+              color: cs.error,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HighlightMetric extends StatelessWidget {
+  final String label;
+  final String valor;
+  final IconData icon;
+  final Color color;
+  const _HighlightMetric({
+    required this.label,
+    required this.valor,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Text(
+          valor,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: cs.onSurface,
+            letterSpacing: -0.3,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: cs.onSurfaceVariant,
+            letterSpacing: 0.3,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  KPIs (linha de 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _KpisRow extends ConsumerWidget {
+  final DashboardStats stats;
+  const _KpisRow({required this.stats});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final cs = Theme.of(context).colorScheme;
+    final warning = statusColors(context, StatusTone.warning).fg;
+
+    void irParaPedidosDoMes() {
+      ref.read(pedidosFiltroProvider.notifier).update(
+            (f) => f.copyWith(de: stats.inicioMes, ate: stats.fimMes),
+          );
+      context.go('/pedidos');
+    }
+
+    void irParaDevendo() {
+      ref.read(pedidosFiltroProvider.notifier).update(
+            (f) => f.copyWith(statusPagamento: 'devendo', resetPeriodo: true),
+          );
+      context.go('/pedidos');
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final colunas = c.maxWidth >= 720 ? 4 : 2;
+        final largura = (c.maxWidth - 10 * (colunas - 1)) / colunas;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            SizedBox(
+              width: largura,
+              child: _KpiTile(
+                label: 'VENDAS DO MÊS',
+                valor: moeda.format(stats.vendasMes),
+                hint: 'recebido ${moeda.format(stats.recebidoMes)}',
+                icon: Icons.trending_up,
+                accent: cs.primary,
+                onTap: irParaPedidosDoMes,
+              ),
+            ),
+            SizedBox(
+              width: largura,
+              child: _KpiTile(
+                label: 'A RECEBER',
+                valor: moeda.format(stats.aReceber),
+                icon: Icons.account_balance_wallet_outlined,
+                accent: warning,
+                onTap: irParaDevendo,
+              ),
+            ),
+            SizedBox(
+              width: largura,
+              child: _KpiTile(
+                label: 'CONCLUÍDOS NO MÊS',
+                valor: '${stats.concluidosMes}',
+                hint: 'de ${stats.pedidosMes} criados',
+                icon: Icons.check_circle_outline,
+                accent: cs.tertiary,
+                onTap: irParaPedidosDoMes,
+              ),
+            ),
+            SizedBox(
+              width: largura,
+              child: _KpiTile(
+                label: 'TICKET MÉDIO',
+                valor: moeda.format(stats.ticketMedio),
+                hint: 'pedido do mês',
+                icon: Icons.local_offer_outlined,
+                accent: cs.secondary,
+                onTap: irParaPedidosDoMes,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _KpiTile extends StatelessWidget {
+  final String label;
+  final String valor;
+  final String? hint;
+  final IconData icon;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _KpiTile({
+    required this.label,
+    required this.valor,
+    required this.icon,
+    required this.accent,
+    this.hint,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
+          ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(icon, size: 14, color: accent),
+                  ),
+                  const Spacer(),
+                  if (onTap != null)
+                    Icon(Icons.arrow_forward, size: 12, color: cs.outline),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: cs.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
-              Text(
-                toBeginningOfSentenceCase(dataExtensa.format(DateTime.now())) ?? '',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  valor,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                    color: cs.onSurface,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
-              const SizedBox(height: 24),
-
-              // KPI cards
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final w = constraints.maxWidth;
-                  final crossCount = w >= 720 ? 4 : 2;
-                  final cardWidth = (w - 12 * (crossCount - 1)) / crossCount;
-                  final kpis = [
-                    KpiCard(
-                      icon: Icons.trending_up,
-                      label: 'FATURAMENTO DO MÊS',
-                      valor: moeda.format(stats.faturamentoMes),
-                      accent: Colors.green,
-                      onTap: () => context.push('/pedidos'),
-                    ),
-                    KpiCard(
-                      icon: Icons.account_balance_wallet_outlined,
-                      label: 'A RECEBER',
-                      valor: moeda.format(stats.aReceber),
-                      accent: Colors.orange,
-                      onTap: () {
-                        ref.read(pedidosFiltroProvider.notifier).update(
-                              (f) => f.copyWith(statusPagamento: 'devendo'),
-                            );
-                        context.push('/pedidos');
-                      },
-                    ),
-                    KpiCard(
-                      icon: Icons.precision_manufacturing_outlined,
-                      label: 'PRODUÇÃO HOJE',
-                      valor: '${stats.emProducaoHoje.length}',
-                      hint: moeda.format(stats.emProducaoHoje.fold<double>(0, (s, p) => s + p.valor)),
-                      accent: theme.colorScheme.tertiary,
-                      onTap: () => context.push('/agenda'),
-                    ),
-                    KpiCard(
-                      icon: Icons.schedule,
-                      label: 'VENCEM EM 7 DIAS',
-                      valor: '${stats.prazosVencendo.length}',
-                      accent: theme.colorScheme.error,
-                      onTap: () => context.push('/pedidos'),
-                    ),
-                  ];
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final kpi in kpis)
-                        SizedBox(width: cardWidth, child: kpi),
-                    ],
-                  );
-                },
-              ),
-              SizedBox(height: wide ? 20 : 16),
-
-              // Conteúdo principal — empilhado no mobile, emparelhado no desktop.
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final cardOcupacao = _OcupacaoCard(stats: stats, moeda: moeda, diaCurto: diaCurto);
-                  final cardProducao = _ProducaoHojeCard(stats: stats);
-                  final cardVencendo = stats.prazosVencendo.isNotEmpty ? _VencendoCard(stats: stats) : null;
-                  final cardUltimos = _UltimosMovimentosCard(stats: stats);
-
-                  if (constraints.maxWidth >= 1100) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: cardOcupacao),
-                              const SizedBox(width: 16),
-                              Expanded(child: cardProducao),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        IntrinsicHeight(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (cardVencendo != null) ...[
-                                Expanded(child: cardVencendo),
-                                const SizedBox(width: 16),
-                              ],
-                              Expanded(child: cardUltimos),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  // Mobile/tablet: empilhado.
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      cardOcupacao,
-                      const SizedBox(height: 16),
-                      cardProducao,
-                      const SizedBox(height: 16),
-                      if (cardVencendo != null) ...[
-                        cardVencendo,
-                        const SizedBox(height: 16),
-                      ],
-                      cardUltimos,
-                    ],
-                  );
-                },
-              ),
+              if (hint != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  hint!,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: cs.outline,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ],
           ),
         ),
@@ -223,105 +512,80 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-class _OcupacaoCard extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+//  CARD DE DESTAQUES (tabs Hoje / Urgentes / Vencendo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DestaquesCard extends StatelessWidget {
   final DashboardStats stats;
-  final NumberFormat moeda;
-  final DateFormat diaCurto;
-  const _OcupacaoCard({required this.stats, required this.moeda, required this.diaCurto});
+  const _DestaquesCard({required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeader(icon: Icons.bar_chart, title: 'Ocupação da semana'),
-            const SizedBox(height: 16),
-            ...stats.ocupacaoSemana.map<Widget>((dia) => _OcupacaoBar(
-                  dia: dia,
-                  moeda: moeda,
-                  diaCurto: diaCurto,
-                )),
-          ],
-        ),
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
       ),
-    );
-  }
-}
-
-class _ProducaoHojeCard extends StatelessWidget {
-  final DashboardStats stats;
-  const _ProducaoHojeCard({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: DefaultTabController(
+        length: 3,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SectionHeader(
-              icon: Icons.today,
-              title: 'Em produção hoje',
-              subtitle: '${stats.emProducaoHoje.length} pedido${stats.emProducaoHoje.length == 1 ? '' : 's'}',
+            Row(
+              children: [
+                Icon(Icons.star_outline, size: 14, color: cs.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'PRÓXIMOS DESTAQUES',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.9,
+                    color: cs.primary,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            if (stats.emProducaoHoje.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Center(
-                  child: Text(
-                    'Nenhum pedido hoje',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
+            const SizedBox(height: 8),
+            TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+              labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+              unselectedLabelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              tabs: [
+                _destaqueTab(context, Icons.today, 'Hoje', stats.emProducaoHoje.length),
+                _destaqueTab(context, Icons.local_fire_department, 'Urgentes', stats.urgentes.length),
+                _destaqueTab(context, Icons.schedule, 'Vencendo', stats.prazosVencendo.length),
+              ],
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 340,
+              child: TabBarView(
+                children: [
+                  _DestaqueLista(
+                    pedidos: stats.emProducaoHoje,
+                    emptyIcon: Icons.event_available_outlined,
+                    emptyTitle: 'Nenhum pedido em produção hoje',
+                    emptyCta: 'Ver agenda',
+                    onEmptyCta: () => context.go('/agenda'),
                   ),
-                ),
-              )
-            else
-              ...stats.emProducaoHoje.map<Widget>(
-                (p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: PedidoCard(
-                    pedido: p,
-                    onTap: () => context.push('/pedidos/${p.id}'),
-                    compacto: true,
+                  _DestaqueLista(
+                    pedidos: stats.urgentes,
+                    emptyIcon: Icons.check_circle_outline,
+                    emptyTitle: 'Nenhum pedido urgente aberto',
                   ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _VencendoCard extends StatelessWidget {
-  final DashboardStats stats;
-  const _VencendoCard({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeader(icon: Icons.warning_amber_rounded, title: 'Prazos vencendo'),
-            const SizedBox(height: 12),
-            ...stats.prazosVencendo.map<Widget>(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: PedidoCard(
-                  pedido: p,
-                  onTap: () => context.push('/pedidos/${p.id}'),
-                  compacto: true,
-                ),
+                  _DestaqueLista(
+                    pedidos: stats.prazosVencendo,
+                    emptyIcon: Icons.check_circle_outline,
+                    emptyTitle: 'Nenhum pedido vencendo em 7 dias',
+                  ),
+                ],
               ),
             ),
           ],
@@ -329,89 +593,31 @@ class _VencendoCard extends StatelessWidget {
       ),
     );
   }
-}
 
-class _UltimosMovimentosCard extends StatelessWidget {
-  final DashboardStats stats;
-  const _UltimosMovimentosCard({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeader(icon: Icons.history, title: 'Últimos movimentos'),
-            const SizedBox(height: 12),
-            ...stats.ultimosMovimentos.take(5).map<Widget>(
-                  (p) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: PedidoCard(
-                      pedido: p,
-                      onTap: () => context.push('/pedidos/${p.id}'),
-                      compacto: true,
-                    ),
-                  ),
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OcupacaoBar extends StatelessWidget {
-  final DiaOcupacao dia;
-  final NumberFormat moeda;
-  final DateFormat diaCurto;
-
-  const _OcupacaoBar({
-    required this.dia,
-    required this.moeda,
-    required this.diaCurto,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final label = toBeginningOfSentenceCase(diaCurto.format(dia.data));
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+  Widget _destaqueTab(BuildContext context, IconData icon, String label, int count) {
+    final cs = Theme.of(context).colorScheme;
+    return Tab(
+      height: 34,
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 48,
-            child: Text(
-              label,
-              style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+          Icon(icon, size: 14),
+          const SizedBox(width: 6),
+          Text(label),
+          const SizedBox(width: 5),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: count > 0 ? cs.primaryContainer : cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(999),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: dia.pct.clamp(0.0, 1.0),
-                minHeight: 10,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                valueColor: AlwaysStoppedAnimation(
-                  dia.estourado ? theme.colorScheme.error : theme.colorScheme.primary,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Flexible(
             child: Text(
-              '${moeda.format(dia.ocupado)} / ${moeda.format(dia.limite)}',
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.end,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: dia.estourado ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant,
-                fontWeight: dia.estourado ? FontWeight.w700 : FontWeight.w500,
+              '$count',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: count > 0 ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -421,78 +627,271 @@ class _OcupacaoBar extends StatelessWidget {
   }
 }
 
-// ── Shimmer skeletons ──────────────────────────────────────────────────────
+/// Lista densa de pedidos usando PedidoRow — sem header (o tab já identifica).
+class _DestaqueLista extends StatelessWidget {
+  final List<Pedido> pedidos;
+  final IconData emptyIcon;
+  final String emptyTitle;
+  final String? emptyCta;
+  final VoidCallback? onEmptyCta;
 
-class _KpiSkeleton extends StatelessWidget {
-  const _KpiSkeleton();
+  const _DestaqueLista({
+    required this.pedidos,
+    required this.emptyIcon,
+    required this.emptyTitle,
+    this.emptyCta,
+    this.onEmptyCta,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                ShimmerSkeleton(width: 36, height: 36, borderRadius: BorderRadius.circular(10)),
-                const Spacer(),
+    final cs = Theme.of(context).colorScheme;
+    if (pedidos.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(emptyIcon, size: 32, color: cs.outline),
+              const SizedBox(height: 10),
+              Text(
+                emptyTitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (emptyCta != null && onEmptyCta != null) ...[
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: onEmptyCta,
+                  icon: const Icon(Icons.arrow_forward, size: 14),
+                  label: Text(emptyCta!),
+                ),
               ],
-            ),
-            const SizedBox(height: 14),
-            const ShimmerSkeleton(width: 80, height: 12),
-            const SizedBox(height: 6),
-            const ShimmerSkeleton(width: 120, height: 24),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
-  }
-}
-
-class _GreetingSkeleton extends StatelessWidget {
-  const _GreetingSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
+      );
+    }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ShimmerSkeleton(width: 160, height: 28, borderRadius: BorderRadius.circular(6)),
-        const SizedBox(height: 6),
-        ShimmerSkeleton(width: 240, height: 16, borderRadius: BorderRadius.circular(4)),
+        const PedidosHeader(),
+        Expanded(
+          child: ListView.builder(
+            itemCount: pedidos.length,
+            itemBuilder: (_, i) => PedidoRow(
+              pedido: pedidos[i],
+              onTap: () => context.push('/pedidos/${pedidos[i].id}'),
+              zebra: i.isOdd,
+            ),
+          ),
+        ),
       ],
     );
   }
 }
 
-class _CardSkeleton extends StatelessWidget {
-  const _CardSkeleton();
+// ─────────────────────────────────────────────────────────────────────────────
+//  OCUPAÇÃO DA SEMANA (com destaque do dia atual)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OcupacaoCard extends ConsumerWidget {
+  final DashboardStats stats;
+  const _OcupacaoCard({required this.stats});
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                ShimmerSkeleton(width: 28, height: 28, borderRadius: BorderRadius.circular(10)),
-                const SizedBox(width: 12),
-                const ShimmerSkeleton(width: 140, height: 16),
-              ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final diaCurto = DateFormat('EEE d', 'pt_BR');
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bar_chart, size: 14, color: cs.primary),
+              const SizedBox(width: 6),
+              Text(
+                'OCUPAÇÃO DA SEMANA',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.9,
+                  color: cs.primary,
+                ),
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: () => context.go('/agenda'),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  child: Row(
+                    children: [
+                      Text(
+                        'agenda',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: cs.primary,
+                        ),
+                      ),
+                      Icon(Icons.arrow_forward, size: 12, color: cs.primary),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final dia in stats.ocupacaoSemana)
+            _OcupacaoBar(
+              dia: dia,
+              moeda: moeda,
+              diaCurto: diaCurto,
+              hojeStr: stats.hoje,
             ),
-            const SizedBox(height: 16),
-            ...List.generate(3, (_) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ShimmerSkeleton(width: double.infinity, height: 48, borderRadius: BorderRadius.circular(12)),
-            )),
-          ],
-        ),
+        ],
       ),
     );
   }
 }
+
+class _OcupacaoBar extends StatelessWidget {
+  final DiaOcupacao dia;
+  final NumberFormat moeda;
+  final DateFormat diaCurto;
+  final String hojeStr;
+
+  const _OcupacaoBar({
+    required this.dia,
+    required this.moeda,
+    required this.diaCurto,
+    required this.hojeStr,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final label = toBeginningOfSentenceCase(diaCurto.format(dia.data));
+    final isHoje = _dataStr(dia.data) == hojeStr;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 62,
+            child: Row(
+              children: [
+                if (isHoje)
+                  Container(
+                    width: 3,
+                    height: 14,
+                    margin: const EdgeInsets.only(right: 5),
+                    decoration: BoxDecoration(
+                      color: cs.primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppType.caption,
+                      fontWeight: isHoje ? FontWeight.w800 : FontWeight.w600,
+                      color: isHoje ? cs.primary : cs.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: dia.pct.clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: cs.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation(
+                  dia.estourado
+                      ? cs.error
+                      : (isHoje ? cs.primary : cs.primary.withValues(alpha: 0.65)),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 114,
+            child: Text(
+              '${moeda.format(dia.ocupado)} / ${moeda.format(dia.limite)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                fontSize: 10,
+                color: dia.estourado ? cs.error : cs.onSurfaceVariant,
+                fontWeight: dia.estourado ? FontWeight.w800 : FontWeight.w600,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _dataStr(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LOADING STATE (compacto)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LoadingState extends StatelessWidget {
+  const _LoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 96),
+      children: [
+        ShimmerSkeleton(width: double.infinity, height: 90, borderRadius: BorderRadius.circular(14)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            for (var i = 0; i < 4; i++) ...[
+              Expanded(child: ShimmerSkeleton(width: double.infinity, height: 100, borderRadius: BorderRadius.circular(10))),
+              if (i < 3) const SizedBox(width: 10),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        ShimmerSkeleton(width: double.infinity, height: 340, borderRadius: BorderRadius.circular(10)),
+        const SizedBox(height: 12),
+        ShimmerSkeleton(width: double.infinity, height: 220, borderRadius: BorderRadius.circular(10)),
+      ],
+    );
+  }
+}
+

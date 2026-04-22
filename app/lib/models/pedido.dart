@@ -31,6 +31,9 @@ class Pedido {
   final DateTime? entregueEm;
   final String? entreguePor;
 
+  final String? regiao;
+  final String? tipoPeca;
+
   final String? formaPagamento;
   final double valorPago;
   final double sinalPago;
@@ -71,6 +74,8 @@ class Pedido {
     this.dataEntregaCombinada,
     this.entregueEm,
     this.entreguePor,
+    this.regiao,
+    this.tipoPeca,
     this.formaPagamento,
     this.valorPago = 0,
     this.sinalPago = 0,
@@ -117,6 +122,8 @@ class Pedido {
         dataEntregaCombinada: _parseDate(j['data_entrega_combinada']),
         entregueEm: _parseDate(j['entregue_em']),
         entreguePor: j['entregue_por'] as String?,
+        regiao: j['regiao'] as String?,
+        tipoPeca: j['tipo_peca'] as String?,
         formaPagamento: j['forma_pagamento'] as String?,
         valorPago: ((j['valor_pago'] as num?) ?? 0).toDouble(),
         sinalPago: ((j['sinal_pago'] as num?) ?? 0).toDouble(),

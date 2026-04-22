@@ -45,11 +45,26 @@ class KanbanScreen extends ConsumerWidget {
 
 /// Corpo do kanban sem Scaffold — reutilizado pela PedidosScreen no toggle
 /// Lista ↔ Kanban.
-class KanbanView extends ConsumerWidget {
+class KanbanView extends ConsumerStatefulWidget {
   const KanbanView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<KanbanView> createState() => _KanbanViewState();
+}
+
+class _KanbanViewState extends ConsumerState<KanbanView> with SingleTickerProviderStateMixin {
+  // TabController persistente — não reseta o tab selecionado a cada refresh
+  // do pedidosProvider (arrastar, mover, etc).
+  late final TabController _tabController = TabController(length: _statusOrdem.length, vsync: this);
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final pedidos = ref.watch(pedidosProvider);
     final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.compact;
 
@@ -73,41 +88,40 @@ class KanbanView extends ConsumerWidget {
 
         if (!wide) {
           // Mobile: tabs por status pra não ter scroll horizontal infinito.
-          return DefaultTabController(
-            length: _statusOrdem.length,
-            child: Column(
-              children: [
-                TabBar(
-                  isScrollable: true,
-                  tabs: [
+          return Column(
+            children: [
+              TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabs: [
+                  for (final s in _statusOrdem)
+                    Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(statusInfo(context, s).icon, size: 16),
+                          const SizedBox(width: 6),
+                          Text('${statusInfo(context, s).label} (${porStatus[s]!.length})'),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
                     for (final s in _statusOrdem)
-                      Tab(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(statusInfo(context, s).icon, size: 16),
-                            const SizedBox(width: 6),
-                            Text('${statusInfo(context, s).label} (${porStatus[s]!.length})'),
-                          ],
-                        ),
+                      _KanbanColuna(
+                        status: s,
+                        pedidos: porStatus[s]!,
+                        onMover: (p, ns) => _moverPedido(ref, context, p, ns),
+                        mobileMode: true,
                       ),
                   ],
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      for (final s in _statusOrdem)
-                        _KanbanColuna(
-                          status: s,
-                          pedidos: porStatus[s]!,
-                          onMover: (p, ns) => _moverPedido(ref, context, p, ns),
-                          mobileMode: true,
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           );
         }
 
@@ -259,7 +273,7 @@ class _KanbanColuna extends StatelessWidget {
                       : const NeverScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(8),
                   itemCount: pedidos.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
                     final p = pedidos[i];
                     return Draggable<Pedido>(

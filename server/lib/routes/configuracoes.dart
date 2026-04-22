@@ -22,6 +22,14 @@ Router configuracoesRouter(Db db) {
     return json(rows.map((row) => Configuracao.fromRow(row).toJson()).toList());
   });
 
+  // Contador do próximo lote — exposto separado porque é só-leitura pra UI
+  // (admin não edita diretamente; ele avança automaticamente ao criar pedidos).
+  r.get('/proximo_lote', (Request req) {
+    final rows = db.raw.select("SELECT valor FROM configuracoes WHERE chave='proximo_lote'");
+    if (rows.isEmpty) return json({'valor': null}, status: 404);
+    return json({'valor': int.tryParse(rows.first['valor'] as String)});
+  });
+
   r.get('/<chave>', (Request req, String chave) {
     final rows = db.raw.select('SELECT * FROM configuracoes WHERE chave = ?', [chave]);
     if (rows.isEmpty) return json({'error': 'chave não encontrada'}, status: 404);

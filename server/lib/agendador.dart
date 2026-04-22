@@ -16,6 +16,9 @@ class Agendador {
     DateTime? dataChegada,
     bool ignorarFixacao = false,
   }) {
+    if (valor <= 0.0001) {
+      throw ArgumentError('valor do pedido deve ser positivo para agendar');
+    }
     final limite = db.configNumber('limite_diario', 1200);
     final sabado = db.configBool('producao_sabado', false);
     final domingo = db.configBool('producao_domingo', false);
@@ -90,12 +93,17 @@ class Agendador {
   }
 
   int calcularPrazoDias(DateTime chegada, DateTime producao) {
+    final sabado = db.configBool('producao_sabado', false);
+    final domingo = db.configBool('producao_domingo', false);
     var dias = 0;
     var cursor = _diaInicio(chegada);
     final alvo = _diaInicio(producao);
     while (cursor.isBefore(alvo)) {
       cursor = cursor.add(const Duration(days: 1));
-      if (cursor.weekday < DateTime.saturday) dias++;
+      final wd = cursor.weekday;
+      if (wd == DateTime.saturday && !sabado) continue;
+      if (wd == DateTime.sunday && !domingo) continue;
+      dias++;
     }
     return dias;
   }

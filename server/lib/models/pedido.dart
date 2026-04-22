@@ -39,6 +39,8 @@ class Pedido {
   final String status;
   final bool urgente;
   final String? observacao;
+  final String? regiao;
+  final String? tipoPeca;
   final String? fechamentoId;
   final String criadoEm;
   final String atualizadoEm;
@@ -78,6 +80,8 @@ class Pedido {
     this.status = 'pendente',
     this.urgente = false,
     this.observacao,
+    this.regiao,
+    this.tipoPeca,
     this.fechamentoId,
     required this.criadoEm,
     required this.atualizadoEm,
@@ -118,6 +122,8 @@ class Pedido {
         status: r['status'] as String,
         urgente: (r['urgente'] as int) == 1,
         observacao: r['observacao'] as String?,
+        regiao: r['regiao'] as String?,
+        tipoPeca: r['tipo_peca'] as String?,
         fechamentoId: r['fechamento_id'] as String?,
         criadoEm: r['criado_em'] as String,
         atualizadoEm: r['atualizado_em'] as String,
@@ -158,6 +164,8 @@ class Pedido {
         'status': status,
         'urgente': urgente,
         'observacao': observacao,
+        'regiao': regiao,
+        'tipo_peca': tipoPeca,
         'fechamento_id': fechamentoId,
         'criado_em': criadoEm,
         'atualizado_em': atualizadoEm,

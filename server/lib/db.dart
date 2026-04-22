@@ -38,6 +38,8 @@ class Db {
       _Migration(2, _migration002Expansao),
       _Migration(3, _migration003SeedTabelaPreco),
       _Migration(4, _migration004Fechamentos),
+      _Migration(5, _migration005RegiaoTipoPeca),
+      _Migration(6, _migration006PrecosOficiais2026),
     ];
 
     var current = _currentVersion();
@@ -231,7 +233,7 @@ void _migration002Expansao(Database raw) {
   for (final c in colunasClientes) {
     raw.execute('ALTER TABLE clientes ADD COLUMN ${c[0]} ${c[1]};');
   }
-  raw.execute("UPDATE clientes SET atualizado_em = criado_em WHERE atualizado_em IS NULL;");
+  raw.execute('UPDATE clientes SET atualizado_em = criado_em WHERE atualizado_em IS NULL;');
 
   // Pagamentos
   raw.execute('''
@@ -381,4 +383,92 @@ void _migration004Fechamentos(Database raw) {
   raw.execute('CREATE INDEX IF NOT EXISTS idx_fech_status ON cliente_fechamentos(status);');
   raw.execute('CREATE INDEX IF NOT EXISTS idx_fech_data ON cliente_fechamentos(data_fechamento_prevista);');
   raw.execute('CREATE INDEX IF NOT EXISTS idx_pedidos_fechamento ON pedidos(fechamento_id);');
+}
+
+void _migration005RegiaoTipoPeca(Database raw) {
+  raw.execute('ALTER TABLE pedidos ADD COLUMN regiao TEXT;');
+  raw.execute('ALTER TABLE pedidos ADD COLUMN tipo_peca TEXT;');
+}
+
+// ── 006 — preços oficiais 2026 (extraídos da planilha PRE�OS) ─────────────
+//
+// Os valores seedados em 003 eram aproximados e divergiam da tabela oficial.
+// Esta migration substitui a tabela inteira pelos valores reais usados no
+// dia-a-dia pela Baray. RELEVO/SILICON não tem coluna "demais cores" na
+// planilha — adotamos `demais = 1ª cor` (cobra-se cada cor pelo mesmo preço).
+void _migration006PrecosOficiais2026(Database raw) {
+  raw.execute('DELETE FROM tabela_preco;');
+
+  final seed = <List<Object>>[
+    // HIDRO — FRENTE/COSTAS
+    ['HIDRO', 'FRENTE/COSTAS', '12-24', 4.90, 2.45],
+    ['HIDRO', 'FRENTE/COSTAS', '25-50', 3.70, 1.85],
+    ['HIDRO', 'FRENTE/COSTAS', '51-100', 3.00, 1.50],
+    ['HIDRO', 'FRENTE/COSTAS', '100+', 2.40, 1.20],
+    // HIDRO — BOTTOM/NUCA
+    ['HIDRO', 'BOTTOM/NUCA', '12-24', 3.90, 1.95],
+    ['HIDRO', 'BOTTOM/NUCA', '25-50', 2.70, 1.35],
+    ['HIDRO', 'BOTTOM/NUCA', '51-100', 2.00, 1.00],
+    ['HIDRO', 'BOTTOM/NUCA', '100+', 1.60, 0.80],
+
+    // ELASTIC — FRENTE/COSTAS
+    ['ELASTIC', 'FRENTE/COSTAS', '12-24', 5.40, 2.70],
+    ['ELASTIC', 'FRENTE/COSTAS', '25-50', 4.20, 1.85],
+    ['ELASTIC', 'FRENTE/COSTAS', '51-100', 3.50, 1.75],
+    ['ELASTIC', 'FRENTE/COSTAS', '100+', 2.70, 1.20],
+    // ELASTIC — BOTTOM/NUCA
+    ['ELASTIC', 'BOTTOM/NUCA', '12-24', 4.40, 2.20],
+    ['ELASTIC', 'BOTTOM/NUCA', '25-50', 3.20, 1.60],
+    ['ELASTIC', 'BOTTOM/NUCA', '51-100', 2.50, 1.20],
+    ['ELASTIC', 'BOTTOM/NUCA', '100+', 2.10, 1.05],
+
+    // PLASTISOL GEL — FRENTE/COSTAS
+    ['PLASTISOL GEL', 'FRENTE/COSTAS', '12-24', 5.90, 3.90],
+    ['PLASTISOL GEL', 'FRENTE/COSTAS', '25-50', 4.70, 2.80],
+    ['PLASTISOL GEL', 'FRENTE/COSTAS', '51-100', 4.00, 2.00],
+    ['PLASTISOL GEL', 'FRENTE/COSTAS', '100+', 3.40, 1.70],
+    // PLASTISOL GEL — BOTTOM/NUCA
+    ['PLASTISOL GEL', 'BOTTOM/NUCA', '12-24', 5.40, 3.40],
+    ['PLASTISOL GEL', 'BOTTOM/NUCA', '25-50', 4.20, 2.30],
+    ['PLASTISOL GEL', 'BOTTOM/NUCA', '51-100', 3.50, 1.75],
+    ['PLASTISOL GEL', 'BOTTOM/NUCA', '100+', 2.60, 1.30],
+
+    // RELEVO/SILICON — só tem coluna 1ª cor na planilha; demais = 1ª.
+    ['RELEVO/SILICON', 'FRENTE/COSTAS', '12-24', 8.00, 8.00],
+    ['RELEVO/SILICON', 'FRENTE/COSTAS', '25-50', 6.75, 6.75],
+    ['RELEVO/SILICON', 'FRENTE/COSTAS', '51-100', 5.75, 5.75],
+    ['RELEVO/SILICON', 'FRENTE/COSTAS', '100+', 5.00, 5.00],
+    ['RELEVO/SILICON', 'BOTTOM/NUCA', '12-24', 7.10, 7.10],
+    ['RELEVO/SILICON', 'BOTTOM/NUCA', '25-50', 6.25, 6.25],
+    ['RELEVO/SILICON', 'BOTTOM/NUCA', '51-100', 5.25, 5.25],
+    ['RELEVO/SILICON', 'BOTTOM/NUCA', '100+', 4.50, 4.50],
+
+    // CROMIA — FRENTE/COSTAS (cor única, demais = 1ª)
+    ['CROMIA', 'FRENTE/COSTAS', '12-24', 12.25, 12.25],
+    ['CROMIA', 'FRENTE/COSTAS', '25-50', 9.25, 9.25],
+    ['CROMIA', 'FRENTE/COSTAS', '51-100', 7.50, 7.50],
+    ['CROMIA', 'FRENTE/COSTAS', '100+', 6.00, 6.00],
+    // CROMIA — BOTTOM/NUCA
+    ['CROMIA', 'BOTTOM/NUCA', '12-24', 9.75, 9.75],
+    ['CROMIA', 'BOTTOM/NUCA', '25-50', 6.75, 6.75],
+    ['CROMIA', 'BOTTOM/NUCA', '51-100', 5.00, 5.00],
+    ['CROMIA', 'BOTTOM/NUCA', '100+', 4.00, 4.00],
+  ];
+
+  final stmt = raw.prepare(
+    'INSERT INTO tabela_preco (id, tecnica, regiao, faixa_qtd, primeira_cor, demais_cores) VALUES (?,?,?,?,?,?)',
+  );
+  var idx = 0;
+  for (final row in seed) {
+    idx++;
+    stmt.execute([
+      'tp_${idx.toString().padLeft(3, '0')}',
+      row[0],
+      row[1],
+      row[2],
+      row[3],
+      row[4],
+    ]);
+  }
+  stmt.dispose();
 }

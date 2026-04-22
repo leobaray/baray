@@ -22,27 +22,54 @@ Router dashboardRouter(Db db) {
     final hojeStr = _dataStr(hoje);
     final inicioMes = DateTime(hoje.year, hoje.month, 1);
     final inicioMesStr = _dataStr(inicioMes);
+    final fimMes = DateTime(hoje.year, hoje.month + 1, 0);
+    final fimMesStr = _dataStr(fimMes);
 
-    // Faturamento do mês (baseado em criado_em)
-    final faturamentoRow = db.raw.select(
-      'SELECT COALESCE(SUM(valor), 0) AS s FROM pedidos WHERE criado_em >= ?',
+    // Vendas do mês — total de pedidos criados (volume de negócio).
+    final vendasRow = db.raw.select(
+      'SELECT COALESCE(SUM(valor), 0) AS s, COUNT(*) AS n FROM pedidos WHERE criado_em >= ?',
       [inicioMesStr],
     ).first;
+    final vendasMes = (vendasRow['s'] as num).toDouble();
+    final pedidosMes = vendasRow['n'] as int;
 
-    // A receber
+    // Recebido no mês — pagamentos efetivos registrados.
+    final recebidoRow = db.raw.select(
+      'SELECT COALESCE(SUM(valor), 0) AS s FROM pedido_pagamentos WHERE quando >= ?',
+      [inicioMesStr],
+    ).first;
+    final recebidoMes = (recebidoRow['s'] as num).toDouble();
+
+    // Pedidos concluídos no mês (entregues com base em entregue_em).
+    final concluidosRow = db.raw.select(
+      'SELECT COUNT(*) AS n FROM pedidos WHERE entregue_em >= ?',
+      [inicioMesStr],
+    ).first;
+    final concluidosMes = concluidosRow['n'] as int;
+
+    // Ticket médio do mês.
+    final ticketMedio = pedidosMes > 0 ? vendasMes / pedidosMes : 0.0;
+
+    // A receber (saldo devedor agregado).
     final aReceberRow = db.raw.select(
       'SELECT COALESCE(SUM(valor - valor_pago), 0) AS s FROM pedidos '
       "WHERE status_pagamento != 'pago' AND status != 'entregue'",
     ).first;
 
-    // Em produção hoje
+    // Em produção hoje.
     final emProducaoRows = db.raw.select(
       'SELECT * FROM pedidos WHERE data_producao = ? ORDER BY lote',
       [hojeStr],
     );
     final emProducao = emProducaoRows.map((r) => Pedido.fromRow(r).toJson()).toList();
 
-    // Prazos vencendo em 7 dias
+    // Urgentes abertos (urgente=1 e não entregue).
+    final urgentesRows = db.raw.select(
+      "SELECT * FROM pedidos WHERE urgente = 1 AND status != 'entregue' ORDER BY lote DESC",
+    );
+    final urgentes = urgentesRows.map((r) => Pedido.fromRow(r).toJson()).toList();
+
+    // Prazos em atenção: pedido não entregue com data_entrega até 7 dias à frente.
     final em7dias = hoje.add(const Duration(days: 7));
     final vencendoRows = db.raw.select(
       'SELECT * FROM pedidos WHERE data_entrega_combinada IS NOT NULL '
@@ -52,32 +79,23 @@ Router dashboardRouter(Db db) {
     );
     final vencendo = vencendoRows.map((r) => Pedido.fromRow(r).toJson()).toList();
 
-    // Últimos movimentos
-    final ultimosRows = db.raw.select(
-      'SELECT * FROM pedidos ORDER BY atualizado_em DESC LIMIT 5',
-    );
-    final ultimos = ultimosRows.map((r) => Pedido.fromRow(r).toJson()).toList();
-
-    // Ocupação dos próximos 7 dias úteis
+    // Ocupação dos próximos 7 dias úteis.
     final ocupacao = agendador.proximosDias(7);
 
-    // Contagens por status
-    final statusRows = db.raw.select(
-      'SELECT status, COUNT(*) AS n FROM pedidos GROUP BY status',
-    );
-    final porStatus = <String, int>{};
-    for (final s in statusRows) {
-      porStatus[s['status'] as String] = s['n'] as int;
-    }
-
     return json({
-      'faturamento_mes': (faturamentoRow['s'] as num).toDouble(),
+      'vendas_mes': vendasMes,
+      'recebido_mes': recebidoMes,
+      'pedidos_mes': pedidosMes,
+      'concluidos_mes': concluidosMes,
+      'ticket_medio': ticketMedio,
       'a_receber': (aReceberRow['s'] as num).toDouble(),
       'em_producao_hoje': emProducao,
+      'urgentes': urgentes,
       'prazos_vencendo': vencendo,
-      'ultimos_movimentos': ultimos,
       'ocupacao_semana': ocupacao,
-      'por_status': porStatus,
+      'hoje': hojeStr,
+      'inicio_mes': inicioMesStr,
+      'fim_mes': fimMesStr,
     });
   });
 

@@ -21,25 +21,48 @@ Router clientesRouter(Db db) {
       );
 
   r.get('/', (Request req) {
-    final busca = req.url.queryParameters['busca'];
-    final sql = StringBuffer('SELECT c.*, '
-        '(SELECT COUNT(*) FROM pedidos p WHERE p.cliente_id = c.id) AS total_pedidos, '
-        '(SELECT COALESCE(SUM(valor), 0) FROM pedidos p WHERE p.cliente_id = c.id) AS total_gasto '
-        'FROM clientes c');
+    final qp = req.url.queryParameters;
+    final busca = qp['busca'];
+    final comDebito = qp['com_debito'] == 'true';
+    final ordenar = qp['ordenar'] ?? 'nome';
+
+    final where = <String>[];
     final args = <Object?>[];
     if (busca != null && busca.isNotEmpty) {
-      sql.write(' WHERE c.nome LIKE ? OR c.telefone LIKE ?');
+      where.add('(c.nome LIKE ? OR c.telefone LIKE ?)');
       args.addAll(['%$busca%', '%$busca%']);
     }
-    sql.write(' ORDER BY c.nome');
+
+    final sql = StringBuffer(
+      'SELECT c.*, '
+      '(SELECT COUNT(*) FROM pedidos p WHERE p.cliente_id = c.id) AS total_pedidos, '
+      '(SELECT COALESCE(SUM(valor), 0) FROM pedidos p WHERE p.cliente_id = c.id) AS total_gasto, '
+      '(SELECT COALESCE(SUM(valor - valor_pago), 0) FROM pedidos p '
+      "  WHERE p.cliente_id = c.id AND p.status_pagamento != 'pago') AS valor_devendo "
+      'FROM clientes c',
+    );
+    if (where.isNotEmpty) sql.write(' WHERE ${where.join(' AND ')}');
+
+    final ordemSql = switch (ordenar) {
+      'gasto' => 'total_gasto DESC',
+      'devendo' => 'valor_devendo DESC',
+      'pedidos' => 'total_pedidos DESC',
+      'recente' => 'c.criado_em DESC',
+      _ => 'c.nome COLLATE NOCASE',
+    };
+    sql.write(' ORDER BY $ordemSql');
 
     final rows = db.raw.select(sql.toString(), args);
-    return json(rows.map((row) {
+    final filtrado = comDebito
+        ? rows.where((r) => (r['valor_devendo'] as num).toDouble() > 0.01)
+        : rows;
+    return json(filtrado.map((row) {
       final c = Cliente.fromRow(row);
       return {
         ...c.toJson(),
         'total_pedidos': row['total_pedidos'],
         'total_gasto': (row['total_gasto'] as num).toDouble(),
+        'valor_devendo': (row['valor_devendo'] as num).toDouble(),
       };
     }).toList());
   });
@@ -58,6 +81,13 @@ Router clientesRouter(Db db) {
       0,
       (s, p) => s + (p['valor'] as num).toDouble(),
     );
+    final valorDevendo = pedidoRows.fold<double>(0, (s, p) {
+      final st = p['status_pagamento'] as String? ?? 'devendo';
+      if (st == 'pago') return s;
+      final v = (p['valor'] as num).toDouble();
+      final pago = ((p['valor_pago'] as num?) ?? 0).toDouble();
+      return s + (v - pago);
+    });
 
     // Buscar fechamento atual (aberto ou estendido)
     Map<String, dynamic>? fechamentoAtual;
@@ -76,6 +106,7 @@ Router clientesRouter(Db db) {
       'pedidos': pedidos,
       'total_pedidos': pedidos.length,
       'total_gasto': totalGasto,
+      'valor_devendo': valorDevendo,
       if (fechamentoAtual != null) 'fechamento_atual': fechamentoAtual,
     });
   });

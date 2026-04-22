@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'theme/density.dart';
+
 // ── Cores da marca (Serigrafia Baray) ────────────────────────────────────
 // Verde-petróleo: profissional, moderno, diferenciado do azul padrão
 const _primaryColor = Color(0xFF00897B);
@@ -109,13 +111,17 @@ ThemeData buildLightTheme() {
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
+    visualDensity: kAppDensity,
     textTheme: _buildTextTheme(baseTextTheme),
     cardTheme: CardThemeData(
-      elevation: 1,
-      shadowColor: Colors.black.withValues(alpha: 0.08),
+      elevation: 0,
+      shadowColor: Colors.black.withValues(alpha: 0.06),
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: scheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.45)),
+      ),
+      color: scheme.surfaceContainerLowest,
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -140,9 +146,10 @@ ThemeData buildLightTheme() {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: scheme.error, width: 2),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
-      hintStyle: TextStyle(color: scheme.outline),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      isDense: true,
+      labelStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+      hintStyle: TextStyle(color: scheme.outline, fontSize: 13),
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface,
@@ -150,11 +157,12 @@ ThemeData buildLightTheme() {
       centerTitle: false,
       elevation: 0,
       scrolledUnderElevation: 1,
+      toolbarHeight: 52,
       titleTextStyle: TextStyle(
         color: scheme.onSurface,
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.15,
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.1,
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -227,14 +235,15 @@ ThemeData buildDarkTheme() {
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
+    visualDensity: kAppDensity,
     textTheme: _buildTextTheme(baseTextTheme),
     cardTheme: CardThemeData(
-      elevation: 1,
+      elevation: 0,
       shadowColor: Colors.black.withValues(alpha: 0.24),
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35)),
       ),
       color: scheme.surfaceContainer,
     ),
@@ -261,9 +270,10 @@ ThemeData buildDarkTheme() {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: scheme.error, width: 2),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
-      hintStyle: TextStyle(color: scheme.outline),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      isDense: true,
+      labelStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+      hintStyle: TextStyle(color: scheme.outline, fontSize: 13),
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface,
@@ -271,22 +281,23 @@ ThemeData buildDarkTheme() {
       centerTitle: false,
       elevation: 0,
       scrolledUnderElevation: 1,
+      toolbarHeight: 52,
       titleTextStyle: TextStyle(
         color: scheme.onSurface,
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.15,
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.1,
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.3),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      height: 72,
+      height: 64,
       elevation: 0,
       shadowColor: Colors.transparent,
       backgroundColor: scheme.surface,

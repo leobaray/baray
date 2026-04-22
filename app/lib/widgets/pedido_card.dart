@@ -73,7 +73,17 @@ class PedidoCard extends StatelessWidget {
       else if (vencendo)
         _VencendoChip(),
     ];
-    final chipsVisiveis = compacto && chips.length > 4 ? chips.sublist(0, 4) : chips;
+    // Em compacto, limita visíveis a 4 e adiciona um indicador "+N" pra não
+    // esconder informação silenciosamente.
+    final chipsVisiveis = compacto && chips.length > 4
+        ? [
+            ...chips.sublist(0, 4),
+            TintChip(
+              icon: Icons.more_horiz,
+              label: '+${chips.length - 4}',
+            ),
+          ]
+        : chips;
 
     return Card(
       child: InkWell(
@@ -142,10 +152,22 @@ class PedidoCard extends StatelessWidget {
                     PagamentoPill(statusPagamento: pedido.statusPagamento),
                     const Spacer(),
                     if (pedido.clienteTelefone != null && pedido.clienteTelefone!.isNotEmpty)
-                      Icon(
-                        Icons.call_outlined,
-                        size: 16,
-                        color: theme.colorScheme.outline,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.call_outlined,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            pedido.clienteTelefone!,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                   ],
                 ),
