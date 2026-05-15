@@ -9,6 +9,7 @@ import 'package:empresa_server/auth_middleware.dart';
 import 'package:empresa_server/db.dart';
 import 'package:empresa_server/error_middleware.dart';
 import 'package:empresa_server/logger.dart';
+import 'package:empresa_server/rate_limiter.dart';
 import 'package:empresa_server/routes/agenda.dart';
 import 'package:empresa_server/routes/clientes.dart';
 import 'package:empresa_server/routes/configuracoes.dart';
@@ -31,6 +32,19 @@ Future<void> main(List<String> args) async {
 
   final allowedOrigins = _parseAllowedOrigins(
     Platform.environment['ALLOWED_ORIGINS'],
+  );
+
+  final rateLimiter = RateLimiter(
+    maxFailures:
+        int.tryParse(Platform.environment['AUTH_RATE_LIMIT_MAX'] ?? '') ?? 5,
+    window: Duration(
+      seconds: int.tryParse(
+              Platform.environment['AUTH_RATE_LIMIT_WINDOW_SECONDS'] ?? '') ??
+          60,
+    ),
+  );
+  appLog.info(
+    'Rate limit auth: ${rateLimiter.maxFailures} falhas / ${rateLimiter.window.inSeconds}s por IP',
   );
 
   final root = Router();
@@ -62,7 +76,7 @@ Future<void> main(List<String> args) async {
       .addMiddleware(errorHandler())
       .addMiddleware(_logRequests())
       .addMiddleware(_cors(allowedOrigins))
-      .addMiddleware(apiKeyAuth(token))
+      .addMiddleware(apiKeyAuth(token, rateLimiter: rateLimiter))
       .addHandler(root.call);
 
   final server = await serve(handler, InternetAddress.anyIPv4, port);

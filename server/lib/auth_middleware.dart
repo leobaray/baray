@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:shelf/shelf.dart';
 
 import 'logger.dart';
+import 'rate_limiter.dart';
 
 /// Token estático compartilhado, lido de:
 /// 1. variável de ambiente `BARAY_API_TOKEN` (preferida);
@@ -54,15 +55,67 @@ const Set<String> _publicPaths = {'/health'};
 
 bool _isPreflight(Request req) => req.method == 'OPTIONS';
 
+/// Extrai o IP do request. Prefere `X-Forwarded-For` (atrás de reverse proxy),
+/// caindo pra `shelf.io.connection_info` se ausente. Retorna `'unknown'` como
+/// último recurso — todos os requests sem identificação compartilham o mesmo
+/// bucket, o que ainda fornece alguma proteção.
+String clientIpFromRequest(Request req) {
+  final xff = req.headers['x-forwarded-for'];
+  if (xff != null && xff.trim().isNotEmpty) {
+    // Pega o primeiro IP da lista (cliente original).
+    final first = xff.split(',').first.trim();
+    if (first.isNotEmpty) return first;
+  }
+  final conn = req.context['shelf.io.connection_info'];
+  if (conn is HttpConnectionInfo) {
+    return conn.remoteAddress.address;
+  }
+  return 'unknown';
+}
+
 /// Middleware que rejeita qualquer request sem o header `X-API-Key` válido.
 /// `/health` e preflights `OPTIONS` permanecem abertos (saúde precisa funcionar
 /// para reverse proxies; preflight precisa de CORS aplicado depois).
-Middleware apiKeyAuth(String expectedToken) {
+///
+/// Quando [rateLimiter] é passado (M-08), tentativas de auth inválidas são
+/// contadas por IP em janela deslizante; ao ultrapassar o limite, requests
+/// subsequentes recebem `429 Too Many Requests` com header `Retry-After`
+/// até a janela expirar. Auth bem-sucedida não consome orçamento.
+/// O extractor [ipOf] é injetável para testes; em produção use o default
+/// ([clientIpFromRequest]).
+Middleware apiKeyAuth(
+  String expectedToken, {
+  RateLimiter? rateLimiter,
+  String Function(Request)? ipOf,
+}) {
+  final extractIp = ipOf ?? clientIpFromRequest;
   return (Handler inner) {
     return (Request req) async {
       if (_isPreflight(req)) return inner(req);
       final path = '/${req.url.path}';
       if (_publicPaths.contains(path)) return inner(req);
+
+      final ip = extractIp(req);
+
+      // Bloqueia antes mesmo de inspecionar o token — evita CPU/log gasto
+      // respondendo 401 pra atacante que já estourou a janela.
+      if (rateLimiter != null && rateLimiter.shouldBlock(ip)) {
+        final retry = rateLimiter.retryAfterSeconds(ip);
+        authLog.warning(
+          'auth_blocked ip=$ip method=${req.method} path=$path retry_after=$retry',
+        );
+        return Response(
+          429,
+          body: jsonEncode({
+            'error': 'tentativas em excesso',
+            'retry_after': retry,
+          }),
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'Retry-After': '$retry',
+          },
+        );
+      }
 
       final provided = req.headers['x-api-key'] ??
           req.headers['X-API-Key'] ??
@@ -70,8 +123,9 @@ Middleware apiKeyAuth(String expectedToken) {
       if (provided == null ||
           provided.isEmpty ||
           !constantTimeEquals(provided, expectedToken)) {
+        rateLimiter?.recordFailure(ip);
         authLog.warning(
-          'auth_fail method=${req.method} path=$path origin=${req.headers['origin'] ?? '-'}',
+          'auth_fail ip=$ip method=${req.method} path=$path origin=${req.headers['origin'] ?? '-'}',
         );
         return Response(
           401,
