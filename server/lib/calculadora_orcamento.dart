@@ -14,6 +14,13 @@ class CalculadoraOrcamento {
     bool urgente = false,
     String? tipoPeca,
   }) {
+    // AUDIT M-01: a tabela_preco não cobre faixa <12. Sem este guard, qtd<12
+    // caía em '12-24' e cobrava o preço da faixa de cima (receita perdida).
+    // Defensivo: rejeita com erro estruturado. A regra "mínimo 12" é o
+    // contrato implícito da tabela de preços (menor faixa cadastrada é 12-24).
+    if (quantidade < 12) {
+      return {'erro': 'quantidade mínima é 12 peças'};
+    }
     final faixa = _faixa(quantidade);
     final rows = db.raw.select(
       'SELECT * FROM tabela_preco WHERE tecnica=? AND regiao=? AND faixa_qtd=?',

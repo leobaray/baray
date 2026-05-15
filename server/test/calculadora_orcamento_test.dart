@@ -112,5 +112,60 @@ void main() {
       // 2.40 + 9 × 1.20 = 13.20
       expect(r['preco_por_peca'], closeTo(13.20, 0.001));
     });
+
+    // AUDIT M-01: qtd<12 caía na faixa '12-24' (cobrava menos por pedidos
+    // pequenos). Agora deve rejeitar com erro estruturado. Boundary: 11 rejeita,
+    // 12 aceita.
+    test('M-01 — qtd=0 rejeita com erro estruturado (mínimo 12)', () {
+      final r = calc.calcular(
+        tecnica: 'HIDRO',
+        regiao: 'FRENTE/COSTAS',
+        quantidade: 0,
+      );
+      expect(r['erro'], isNotNull);
+      expect(r['erro'].toString().toLowerCase(), contains('mínim'));
+    });
+
+    test('M-01 — qtd=1 rejeita com erro estruturado (mínimo 12)', () {
+      final r = calc.calcular(
+        tecnica: 'HIDRO',
+        regiao: 'FRENTE/COSTAS',
+        quantidade: 1,
+      );
+      expect(r['erro'], isNotNull);
+      expect(r['erro'].toString().toLowerCase(), contains('mínim'));
+    });
+
+    test('M-01 — qtd=11 (boundary) rejeita com erro estruturado', () {
+      final r = calc.calcular(
+        tecnica: 'HIDRO',
+        regiao: 'FRENTE/COSTAS',
+        quantidade: 11,
+      );
+      expect(r['erro'], isNotNull);
+      expect(r['erro'].toString().toLowerCase(), contains('mínim'));
+    });
+
+    test('M-01 — qtd=12 (boundary inferior aceito) calcula faixa 12-24', () {
+      final r = calc.calcular(
+        tecnica: 'HIDRO',
+        regiao: 'FRENTE/COSTAS',
+        quantidade: 12,
+      );
+      expect(r['erro'], isNull);
+      expect(r['faixa_qtd'], '12-24');
+      expect(r['quantidade'], 12);
+    });
+
+    test('M-01 — qtd=24 (limite superior da faixa) calcula faixa 12-24', () {
+      final r = calc.calcular(
+        tecnica: 'HIDRO',
+        regiao: 'FRENTE/COSTAS',
+        quantidade: 24,
+      );
+      expect(r['erro'], isNull);
+      expect(r['faixa_qtd'], '12-24');
+      expect(r['quantidade'], 24);
+    });
   });
 }
