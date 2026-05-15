@@ -290,8 +290,35 @@ Router clientesRouter(Db db) {
   r.delete('/<id>', (Request req, String id) {
     final exists = db.raw.select('SELECT id FROM clientes WHERE id = ?', [id]);
     if (exists.isEmpty) return json({'error': 'cliente não encontrado'}, status: 404);
-    db.raw.execute('DELETE FROM clientes WHERE id = ?', [id]);
-    return json({'ok': true});
+
+    // B-01: wrap em transação. Antes de deletar, conta fechamentos não
+    // finalizados (aberto/estendido). Se houver e o cliente não pediu
+    // ?force=true, bloqueia com 409 para o app exibir warning explícito —
+    // o usuário precisa saber que vai perder histórico de fechamentos via
+    // CASCADE (FK em cliente_fechamentos.cliente_id, db.dart:410).
+    final force = req.url.queryParameters['force'] == 'true';
+
+    return db.transaction(() {
+      final countRow = db.raw.select(
+        'SELECT COUNT(*) AS n FROM cliente_fechamentos '
+        "WHERE cliente_id = ? AND status IN ('aberto', 'estendido')",
+        [id],
+      ).first;
+      final abertos = (countRow['n'] as num).toInt();
+
+      if (abertos > 0 && !force) {
+        return json({
+          'error': 'cliente tem fechamentos abertos',
+          'count': abertos,
+        }, status: 409);
+      }
+
+      // Cascade dispara via FK ON DELETE CASCADE: cliente_fechamentos são
+      // removidos automaticamente; trigger 008 (db.dart:522) já zera
+      // pedidos.fechamento_id antes da remoção de cada fechamento.
+      db.raw.execute('DELETE FROM clientes WHERE id = ?', [id]);
+      return json({'ok': true});
+    });
   });
 
   // ── Fechamentos do cliente ────────────────────────────────────────────
