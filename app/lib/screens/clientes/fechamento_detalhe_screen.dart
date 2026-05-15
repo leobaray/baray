@@ -7,6 +7,7 @@ import '../../api/api_client.dart';
 import '../../models/cliente_fechamento.dart';
 import '../../models/pedido.dart';
 import '../../state/cliente_fechamentos_provider.dart';
+import '../../util/formatters.dart';
 import '../../widgets/fechamento_status_badge.dart';
 import '../../widgets/pedido_card.dart';
 import '../../widgets/resumo_row.dart';
@@ -57,8 +58,8 @@ class _FechamentoDetalheScreenState extends ConsumerState<FechamentoDetalheScree
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final dataFmt = DateFormat('dd/MM/yyyy');
+    final moeda = AppFormatters.moeda;
+    final dataFmt = AppFormatters.data;
 
     return Scaffold(
       appBar: AppBar(
@@ -179,7 +180,7 @@ class _FechamentoDetalheScreenState extends ConsumerState<FechamentoDetalheScree
                 padding: const EdgeInsets.only(bottom: 8),
                 child: PedidoCard(
                   pedido: p,
-                  onTap: () => context.push('/pedidos/${p.id}'),
+                  onTap: () => context.push('/pedidos/${p.id}?from=fechamento'),
                   compacto: true,
                 ),
               ),

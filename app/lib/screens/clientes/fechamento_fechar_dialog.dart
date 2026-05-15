@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../api/api_client.dart';
 import '../../models/cliente_fechamento.dart';
+import '../../util/formatters.dart';
 
 class FechamentoFecharDialog extends ConsumerStatefulWidget {
   final ClienteFechamento fechamento;
@@ -47,7 +47,7 @@ class _FechamentoFecharDialogState extends ConsumerState<FechamentoFecharDialog>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final moeda = AppFormatters.moeda;
     final f = widget.fechamento;
 
     return AlertDialog(

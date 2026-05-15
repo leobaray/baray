@@ -13,8 +13,16 @@ import '../models/orcamento.dart';
 import '../models/pagamento.dart';
 import '../models/pedido.dart';
 
-const String defaultServerUrl = 'http://10.150.60.100:8080';
+/// URL padrão do servidor — sobrescreva no build com `--dart-define=SERVER_URL=...`
+/// ou via configuração na primeira execução. Defaults pra localhost pra não
+/// vazar topologia interna no código fonte (B-03).
+const String defaultServerUrl = String.fromEnvironment(
+  'SERVER_URL',
+  defaultValue: 'http://localhost:8080',
+);
+
 const String prefsKeyServerUrl = 'server_url';
+const String prefsKeyApiToken = 'api_token';
 
 class ServerHealth {
   final bool online;
@@ -26,19 +34,36 @@ class ServerHealth {
 class ApiClient {
   final Dio dio;
   String baseUrl;
+  String _apiToken;
 
-  ApiClient(this.baseUrl)
-      : dio = Dio(BaseOptions(
+  ApiClient(this.baseUrl, {String apiToken = ''})
+      : _apiToken = apiToken,
+        dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 20),
           headers: {'content-type': 'application/json'},
-        ));
+        )) {
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (_apiToken.isNotEmpty) {
+          options.headers['X-API-Key'] = _apiToken;
+        }
+        handler.next(options);
+      },
+    ));
+  }
 
   void updateBaseUrl(String url) {
     baseUrl = url;
     dio.options.baseUrl = url;
   }
+
+  void updateApiToken(String token) {
+    _apiToken = token;
+  }
+
+  String get apiToken => _apiToken;
 
   Future<bool> health() async {
     try {
@@ -244,6 +269,11 @@ class ApiClient {
     return (r.data as List).map((e) => e as String).toList();
   }
 
+  Future<List<String>> listarRegioes() async {
+    final r = await dio.get('/orcamento/regioes');
+    return (r.data as List).map((e) => e as String).toList();
+  }
+
   Future<OrcamentoResultado> calcularOrcamento(Map<String, dynamic> body) async {
     final r = await dio.post('/orcamento/calcular', data: body);
     return OrcamentoResultado.fromJson(r.data as Map<String, dynamic>);
@@ -280,12 +310,13 @@ class ApiClient {
   }
 }
 
-// Provider que carrega URL do SharedPreferences
 final serverUrlProvider = StateProvider<String>((ref) => defaultServerUrl);
+final apiTokenProvider = StateProvider<String>((ref) => '');
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final url = ref.watch(serverUrlProvider);
-  return ApiClient(url);
+  final token = ref.watch(apiTokenProvider);
+  return ApiClient(url, apiToken: token);
 });
 
 Future<String> loadServerUrl() async {
@@ -296,4 +327,14 @@ Future<String> loadServerUrl() async {
 Future<void> saveServerUrl(String url) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(prefsKeyServerUrl, url);
+}
+
+Future<String> loadApiToken() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(prefsKeyApiToken) ?? '';
+}
+
+Future<void> saveApiToken(String token) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(prefsKeyApiToken, token);
 }

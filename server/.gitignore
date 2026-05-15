@@ -6,3 +6,5 @@ empresa.db
 empresa.db-journal
 empresa.db-wal
 empresa.db-shm
+empresa.db.backup_*
+api_token

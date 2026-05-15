@@ -2,6 +2,16 @@ import 'package:uuid/uuid.dart';
 
 import 'db.dart';
 
+/// Lançada quando o agendador não consegue alocar o pedido por motivo de
+/// regra de negócio (capacidade insuficiente, range de >1 ano). Handlers das
+/// rotas convertem isso em HTTP 400.
+class AgendadorCapacidadeException implements Exception {
+  final String message;
+  AgendadorCapacidadeException(this.message);
+  @override
+  String toString() => message;
+}
+
 /// Agendador automático — substituto do Módulo6 da planilha.
 ///
 /// Escolhe a data (ou sequência de datas) em que um pedido entra em produção,
@@ -17,8 +27,26 @@ class Agendador {
     bool ignorarFixacao = false,
   }) {
     if (valor <= 0.0001) {
-      throw ArgumentError('valor do pedido deve ser positivo para agendar');
+      throw AgendadorCapacidadeException(
+        'pedido sem valor positivo — não pode ser agendado',
+      );
     }
+
+    // A-03: pedido fixado mantém a distribuição atual; só recalcula quando
+    // chamado explicitamente com `ignorarFixacao: true`.
+    if (!ignorarFixacao) {
+      final fix = db.raw.select(
+        'SELECT agendamento_fixo, data_producao FROM pedidos WHERE id = ?',
+        [pedidoId],
+      );
+      if (fix.isNotEmpty &&
+          (fix.first['agendamento_fixo'] as int?) == 1 &&
+          fix.first['data_producao'] != null) {
+        final dataProd = fix.first['data_producao'] as String;
+        return DateTime.parse(dataProd.length >= 10 ? dataProd.substring(0, 10) : dataProd);
+      }
+    }
+
     final limite = db.configNumber('limite_diario', 1200);
     final sabado = db.configBool('producao_sabado', false);
     final domingo = db.configBool('producao_domingo', false);
@@ -36,7 +64,9 @@ class Agendador {
     var guard = 0;
     while (restante > 0.0001) {
       if (guard++ > 365) {
-        throw StateError('Agendamento estourou 1 ano — bug ou config errada.');
+        throw AgendadorCapacidadeException(
+          'capacidade insuficiente: pedido excede 1 ano útil — ajuste limite diário em Configurações',
+        );
       }
       final chave = _chaveDia(cursor);
       final ocupado = jaAgendado[chave] ?? 0;
@@ -58,7 +88,7 @@ class Agendador {
     for (final d in distribuicao) {
       stmt.execute([uuid.v4(), pedidoId, _chaveDia(d.key), d.value]);
     }
-    stmt.dispose();
+    stmt.close();
 
     return distribuicao.first.key;
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/density.dart';
+
 /// Chip tintado pequeno com ícone + label. Usado em cards de pedido, cliente
 /// e dashboard pra mostrar metadados sem roubar atenção do conteúdo principal.
 class TintChip extends StatelessWidget {
@@ -39,7 +41,7 @@ class TintChip extends StatelessWidget {
             style: theme.textTheme.labelSmall?.copyWith(
               color: fgColor,
               fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
-              fontSize: 11,
+              fontSize: AppType.pill,
             ),
           ),
         ],

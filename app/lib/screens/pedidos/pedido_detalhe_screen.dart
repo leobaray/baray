@@ -9,19 +9,38 @@ import '../../state/pagamentos_provider.dart';
 import '../../state/pedidos_provider.dart';
 import '../../state/dashboard_provider.dart';
 import '../../theme/breakpoints.dart';
+import '../../theme/spacing.dart';
+import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/list_skeleton.dart';
 import '../../widgets/status_pill.dart';
 
 class PedidoDetalheScreen extends ConsumerWidget {
   final String pedidoId;
-  const PedidoDetalheScreen({super.key, required this.pedidoId});
+
+  /// Chave da tela de origem (`agenda`, `pedidos`, `dashboard`, `kanban`,
+  /// `cliente`, `fechamento`). Mostra um breadcrumb "← X" abaixo do título.
+  /// Quando `null`, breadcrumb fica oculto (deep link / abertura externa).
+  final String? from;
+  const PedidoDetalheScreen({super.key, required this.pedidoId, this.from});
+
+  String? _fromLabel(String? key) => switch (key) {
+        'agenda' => 'Agenda',
+        'pedidos' => 'Pedidos',
+        'dashboard' => 'Início',
+        'kanban' => 'Kanban',
+        'cliente' => 'Cliente',
+        'fechamento' => 'Fechamento',
+        _ => null,
+      };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pedidoAsync = ref.watch(pedidoProvider(pedidoId));
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final data = DateFormat('dd/MM/yyyy', 'pt_BR');
+    final moeda = AppFormatters.moeda;
+    final data = AppFormatters.data;
     final dataSemana = DateFormat("EEEE', 'dd/MM/yyyy", 'pt_BR');
+    final breadcrumb = _fromLabel(from);
 
     return Scaffold(
       appBar: AppBar(
@@ -30,7 +49,24 @@ class PedidoDetalheScreen extends ConsumerWidget {
           error: (_, _) => const Text('Pedido'),
           data: (p) => Text(p.loteFormatado),
         ),
+        bottom: breadcrumb == null
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(28),
+                child: _Breadcrumb(label: breadcrumb, onTap: () {
+                  if (context.canPop()) context.pop();
+                }),
+              ),
         actions: [
+          pedidoAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
+            data: (p) => IconButton(
+              icon: const Icon(Icons.swap_horiz_outlined),
+              tooltip: 'Mudar status',
+              onPressed: () => _abrirMenuStatus(context, ref, p),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Editar',
@@ -79,7 +115,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
         ],
       ),
       body: pedidoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const DetailSkeleton(),
         error: (e, _) => ErrorState(
           message: e.toString(),
           onRetry: () => ref.invalidate(pedidoProvider(pedidoId)),
@@ -98,7 +134,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
 
             final cabecalho = Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(AppSpacing.padLg),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -157,7 +193,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
 
             final cardPeca = Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(AppSpacing.padLg),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -177,7 +213,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
             final cardArte = temArte
                 ? Card(
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(AppSpacing.padLg),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -195,7 +231,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
 
             final cardAgenda = Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(AppSpacing.padLg),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -215,7 +251,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
 
             final cardEntrega = Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(AppSpacing.padLg),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -256,7 +292,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
 
             final cardPagamentos = Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(AppSpacing.padLg),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -280,7 +316,7 @@ class PedidoDetalheScreen extends ConsumerWidget {
             final cardObservacao = (pedido.observacao != null && pedido.observacao!.isNotEmpty)
                 ? Card(
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(AppSpacing.padLg),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -349,6 +385,87 @@ class PedidoDetalheScreen extends ConsumerWidget {
     );
   }
 
+  static const _statusOrdem = ['pendente', 'agendado', 'producao', 'concluido', 'entregue'];
+
+  Future<void> _abrirMenuStatus(BuildContext context, WidgetRef ref, Pedido pedido) async {
+    final escolha = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        final cs = Theme.of(sheetCtx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  child: Text(
+                    'Mudar status para',
+                    style: Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                for (final s in _statusOrdem)
+                  ListTile(
+                    enabled: s != pedido.status,
+                    leading: Icon(statusInfo(sheetCtx, s).icon, color: statusInfo(sheetCtx, s).fg),
+                    title: Text(
+                      statusInfo(sheetCtx, s).label,
+                      style: TextStyle(
+                        fontWeight: s == pedido.status ? FontWeight.w400 : FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: s == pedido.status ? const Text('Status atual') : null,
+                    trailing: s == pedido.status ? Icon(Icons.check, color: cs.primary, size: 18) : null,
+                    onTap: () => Navigator.of(sheetCtx).pop(s),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (escolha == null || escolha == pedido.status || !context.mounted) return;
+    final statusOrigem = pedido.status;
+    try {
+      await ref.read(apiClientProvider).atualizarPedido(pedido.id, {'status': escolha});
+      ref.invalidate(pedidoProvider(pedido.id));
+      ref.invalidate(pedidosProvider);
+      ref.invalidate(dashboardProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Status: ${statusInfo(context, escolha).label}'),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Desfazer',
+                onPressed: () async {
+                  try {
+                    await ref.read(apiClientProvider).atualizarPedido(pedido.id, {'status': statusOrigem});
+                    ref.invalidate(pedidoProvider(pedido.id));
+                    ref.invalidate(pedidosProvider);
+                    ref.invalidate(dashboardProvider);
+                  } catch (_) {}
+                },
+              ),
+            ),
+          );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao mudar status: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _handleMenu(BuildContext context, WidgetRef ref, String action, Pedido pedido) async {
     if (action == 'duplicar') {
       try {
@@ -371,14 +488,32 @@ class PedidoDetalheScreen extends ConsumerWidget {
       }
     } else if (action == 'reagendar') {
       try {
-        await ref.read(apiClientProvider).agendarPedido(pedido.id);
+        final atualizado = await ref.read(apiClientProvider).agendarPedido(pedido.id);
         ref.invalidate(pedidoProvider(pedido.id));
         ref.invalidate(pedidosProvider);
         ref.invalidate(dashboardProvider);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Pedido reagendado')),
-          );
+          final nova = atualizado.dataProducao;
+          final dia = nova == null
+              ? null
+              : '${nova.year.toString().padLeft(4, '0')}-${nova.month.toString().padLeft(2, '0')}-${nova.day.toString().padLeft(2, '0')}';
+          final msg = nova == null
+              ? 'Pedido reagendado'
+              : 'Reagendado para ${AppFormatters.data.format(nova)}';
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              SnackBar(
+                content: Text(msg),
+                behavior: SnackBarBehavior.floating,
+                action: dia == null
+                    ? null
+                    : SnackBarAction(
+                        label: 'Ver agenda',
+                        onPressed: () => context.go('/agenda?dia=$dia'),
+                      ),
+              ),
+            );
         }
       } catch (e) {
         if (context.mounted) {
@@ -413,7 +548,12 @@ class PedidoDetalheScreen extends ConsumerWidget {
         await ref.read(apiClientProvider).deletarPedido(pedido.id);
         ref.invalidate(pedidosProvider);
         ref.invalidate(dashboardProvider);
-        if (context.mounted) context.pop();
+        if (context.mounted) {
+          context.pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Pedido ${pedido.loteFormatado} excluído')),
+          );
+        }
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -501,6 +641,11 @@ class _PagamentosList extends ConsumerWidget {
                           ref.invalidate(pedidoProvider(pedidoId));
                           ref.invalidate(pedidosProvider);
                           ref.invalidate(dashboardProvider);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Pagamento removido')),
+                            );
+                          }
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -540,7 +685,7 @@ class _PagamentosList extends ConsumerWidget {
   }
 
   void _showRegistrarPagamento(BuildContext context, WidgetRef ref) {
-    final valorCtl = TextEditingController(text: valorRestante.toStringAsFixed(2).replaceAll('.', ','));
+    final valorCtl = TextEditingController(text: formatValorBR(valorRestante));
     String? forma = 'pix';
     final obsCtl = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -558,6 +703,7 @@ class _PagamentosList extends ConsumerWidget {
           ),
           child: Form(
             key: formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -571,10 +717,10 @@ class _PagamentosList extends ConsumerWidget {
                     prefixIcon: Icon(Icons.payments_outlined),
                   ),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: const [BrlInputFormatter()],
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Obrigatório';
-                    final val = v.trim().replaceAll('.', '').replaceAll(',', '.');
-                    if (double.tryParse(val) == null || double.parse(val) <= 0) return 'Inválido';
+                    final val = parseValorBR(v ?? '');
+                    if (val == null || val <= 0) return 'Inválido';
                     return null;
                   },
                 ),
@@ -607,10 +753,11 @@ class _PagamentosList extends ConsumerWidget {
                   child: FilledButton(
                     onPressed: () async {
                       if (!formKey.currentState!.validate()) return;
-                      final valor = valorCtl.text.trim().replaceAll('.', '').replaceAll(',', '.');
+                      final valor = parseValorBR(valorCtl.text);
+                      if (valor == null) return;
                       try {
                         await ref.read(apiClientProvider).registrarPagamento(pedidoId, {
-                          'valor': double.parse(valor),
+                          'valor': valor,
                           'forma': forma,
                           if (obsCtl.text.trim().isNotEmpty) 'observacao': obsCtl.text.trim(),
                         });
@@ -635,6 +782,42 @@ class _PagamentosList extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ── Breadcrumb (abaixo do título da AppBar) ───────────────────────────────
+
+class _Breadcrumb extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _Breadcrumb({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 28,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 16, 4),
+          child: Row(
+            children: [
+              Icon(Icons.arrow_back, size: 14, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,5 +1,7 @@
 import 'package:sqlite3/sqlite3.dart';
 
+import 'logger.dart';
+
 class Db {
   final Database raw;
   Db(this.raw);
@@ -21,13 +23,24 @@ class Db {
     final v = row['v'];
     if (v is int) return v;
     // DB vazia — mas pode ser DB antiga que já foi criada com o schema v1 via CREATE IF NOT EXISTS.
+    // Só registramos v1 se a migration 001 já tiver sido aplicada de fato:
+    // exige `pedidos` E `configuracoes` E o seed `proximo_lote`. Caso contrário,
+    // deixamos a migration rodar normalmente (caso contrário, `proximoLote()` quebra).
     final pedidosExiste = raw.select(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='pedidos'",
     );
-    if (pedidosExiste.isNotEmpty) {
-      final now = DateTime.now().toIso8601String();
-      raw.execute('INSERT INTO schema_version VALUES (1, ?)', [now]);
-      return 1;
+    final configExiste = raw.select(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='configuracoes'",
+    );
+    if (pedidosExiste.isNotEmpty && configExiste.isNotEmpty) {
+      final hasLote = raw.select(
+        "SELECT 1 FROM configuracoes WHERE chave='proximo_lote' LIMIT 1",
+      );
+      if (hasLote.isNotEmpty) {
+        final now = DateTime.now().toUtc().toIso8601String();
+        raw.execute('INSERT INTO schema_version VALUES (1, ?)', [now]);
+        return 1;
+      }
     }
     return 0;
   }
@@ -40,6 +53,8 @@ class Db {
       _Migration(4, _migration004Fechamentos),
       _Migration(5, _migration005RegiaoTipoPeca),
       _Migration(6, _migration006PrecosOficiais2026),
+      _Migration(7, _migration007FechamentoDiaMes),
+      _Migration(8, _migration008FechamentoIdCleanup),
     ];
 
     var current = _currentVersion();
@@ -50,27 +65,51 @@ class Db {
         m.up(raw);
         raw.execute(
           'INSERT INTO schema_version VALUES (?, ?)',
-          [m.version, DateTime.now().toIso8601String()],
+          [m.version, DateTime.now().toUtc().toIso8601String()],
         );
         raw.execute('COMMIT');
-        print('[db] migration ${m.version} aplicada');
+        dbLog.info('migration ${m.version} aplicada');
         current = m.version;
       } catch (e) {
         raw.execute('ROLLBACK');
-        print('[db] ERRO na migration ${m.version}: $e');
+        dbLog.severe('falha na migration ${m.version}', e);
         rethrow;
       }
     }
   }
 
+  /// Incrementa o contador `proximo_lote` atomicamente e devolve o valor
+  /// **anterior** (o lote disponível pra usar). UPDATE...RETURNING em SQLite
+  /// ≥ 3.35 garante atomicidade num só statement — evita race entre
+  /// SELECT/UPDATE concorrentes.
   int proximoLote() {
-    final row = raw.select("SELECT valor FROM configuracoes WHERE chave='proximo_lote'").first;
-    final atual = int.parse(row['valor'] as String);
-    raw.execute(
-      "UPDATE configuracoes SET valor=?, atualizado_em=? WHERE chave='proximo_lote'",
-      [(atual + 1).toString(), DateTime.now().toIso8601String()],
+    final atualizadoEm = DateTime.now().toUtc().toIso8601String();
+    final result = raw.select(
+      'UPDATE configuracoes SET valor = CAST(CAST(valor AS INTEGER) + 1 AS TEXT), '
+      "atualizado_em = ? WHERE chave = 'proximo_lote' "
+      'RETURNING CAST(valor AS INTEGER) - 1 AS lote',
+      [atualizadoEm],
     );
-    return atual;
+    if (result.isEmpty) {
+      throw StateError(
+        'configuração proximo_lote não encontrada — DB corrompido ou não-migrado',
+      );
+    }
+    return result.first['lote'] as int;
+  }
+
+  /// Executa [body] dentro de uma transação. Faz `BEGIN`/`COMMIT` em caso de
+  /// sucesso; `ROLLBACK` + rethrow se algo lançar. Não aninhar.
+  T transaction<T>(T Function() body) {
+    raw.execute('BEGIN');
+    try {
+      final result = body();
+      raw.execute('COMMIT');
+      return result;
+    } catch (e) {
+      raw.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   Map<String, String> carregarConfiguracoes() {
@@ -91,7 +130,10 @@ class Db {
     return v == 'true' || v == '1';
   }
 
-  void close() => raw.dispose();
+  /// Verifica integridade do banco (usado por `/health`). Lança se quebrado.
+  void ping() => raw.select('SELECT 1');
+
+  void close() => raw.close();
 }
 
 class _Migration {
@@ -163,7 +205,7 @@ void _migration001Base(Database raw) {
   // Seed de configurações (só se estiver vazia)
   final count = raw.select('SELECT COUNT(*) AS n FROM configuracoes').first['n'] as int;
   if (count == 0) {
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     final defaults = <List<String>>[
       ['limite_diario', '1200', 'number', 'Limite máximo de produção em R\$ por dia útil'],
       ['producao_sabado', 'false', 'bool', 'Sábado conta como dia de produção'],
@@ -185,7 +227,7 @@ void _migration001Base(Database raw) {
     for (final c in defaults) {
       stmt.execute([c[0], c[1], c[2], c[3], now]);
     }
-    stmt.dispose();
+    stmt.close();
     raw.execute(
       "INSERT INTO configuracoes (chave, valor, tipo, descricao, atualizado_em) VALUES ('proximo_lote','100','number','Próximo número de lote',?)",
       [now],
@@ -282,21 +324,15 @@ void _migration002Expansao(Database raw) {
 // ── 003 — seed da tabela de preços (extraído da aba PREÇOS 2026) ──────────
 
 void _migration003SeedTabelaPreco(Database raw) {
-  // Matriz simplificada baseada na tabela de referência 2026.
-  // Usuário pode editar depois na tela de orçamento.
-  // Estrutura: tecnica × regiao × faixa_qtd → (1ª cor, demais cores).
   final seed = <List<Object>>[
-    // HIDRO (base d'água) — FRENTE/COSTAS
     ['HIDRO', 'FRENTE/COSTAS', '12-24', 15.0, 3.0],
     ['HIDRO', 'FRENTE/COSTAS', '25-50', 12.0, 2.5],
     ['HIDRO', 'FRENTE/COSTAS', '51-100', 10.0, 2.0],
     ['HIDRO', 'FRENTE/COSTAS', '100+', 8.0, 1.5],
-    // HIDRO — BOTTOM/NUCA
     ['HIDRO', 'BOTTOM/NUCA', '12-24', 9.0, 2.0],
     ['HIDRO', 'BOTTOM/NUCA', '25-50', 7.0, 1.5],
     ['HIDRO', 'BOTTOM/NUCA', '51-100', 6.0, 1.0],
     ['HIDRO', 'BOTTOM/NUCA', '100+', 5.0, 1.0],
-    // ELASTIC
     ['ELASTIC', 'FRENTE/COSTAS', '12-24', 18.0, 4.0],
     ['ELASTIC', 'FRENTE/COSTAS', '25-50', 15.0, 3.5],
     ['ELASTIC', 'FRENTE/COSTAS', '51-100', 12.0, 3.0],
@@ -305,7 +341,6 @@ void _migration003SeedTabelaPreco(Database raw) {
     ['ELASTIC', 'BOTTOM/NUCA', '25-50', 9.0, 2.0],
     ['ELASTIC', 'BOTTOM/NUCA', '51-100', 7.0, 1.5],
     ['ELASTIC', 'BOTTOM/NUCA', '100+', 6.0, 1.5],
-    // PLASTISOL GEL
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '12-24', 20.0, 4.5],
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '25-50', 16.0, 4.0],
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '51-100', 13.0, 3.0],
@@ -314,7 +349,6 @@ void _migration003SeedTabelaPreco(Database raw) {
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '25-50', 10.0, 2.5],
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '51-100', 8.0, 2.0],
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '100+', 7.0, 1.5],
-    // RELEVO / SILICON
     ['RELEVO/SILICON', 'FRENTE/COSTAS', '12-24', 22.0, 5.0],
     ['RELEVO/SILICON', 'FRENTE/COSTAS', '25-50', 18.0, 4.0],
     ['RELEVO/SILICON', 'FRENTE/COSTAS', '51-100', 14.0, 3.5],
@@ -340,27 +374,24 @@ void _migration003SeedTabelaPreco(Database raw) {
       row[4],
     ]);
   }
-  stmt.dispose();
+  stmt.close();
 }
 
 // ── 004 — ciclos de fechamento por cliente (faturamento) ─────────────────
 
 void _migration004Fechamentos(Database raw) {
-  // Colunas novas em clientes
   const colunasClientes = <List<String>>[
-    ['fechamento_tipo', 'TEXT'],        // 'semanal', 'quinzenal', 'mensal', 'data_fixa'
-    ['fechamento_dia', 'INTEGER'],      // semanal: 1-7, mensal: 1-31
-    ['fechamento_data_fixa', 'TEXT'],   // ISO date para tipo data_fixa
-    ['fechamento_ativo', 'INTEGER NOT NULL DEFAULT 0'], // 0/1
+    ['fechamento_tipo', 'TEXT'],
+    ['fechamento_dia', 'INTEGER'],
+    ['fechamento_data_fixa', 'TEXT'],
+    ['fechamento_ativo', 'INTEGER NOT NULL DEFAULT 0'],
   ];
   for (final c in colunasClientes) {
     raw.execute('ALTER TABLE clientes ADD COLUMN ${c[0]} ${c[1]};');
   }
 
-  // Coluna novo em pedidos
   raw.execute('ALTER TABLE pedidos ADD COLUMN fechamento_id TEXT;');
 
-  // Tabela de fechamentos
   raw.execute('''
     CREATE TABLE IF NOT EXISTS cliente_fechamentos (
       id TEXT PRIMARY KEY,
@@ -391,49 +422,34 @@ void _migration005RegiaoTipoPeca(Database raw) {
 }
 
 // ── 006 — preços oficiais 2026 (extraídos da planilha PRE�OS) ─────────────
-//
-// Os valores seedados em 003 eram aproximados e divergiam da tabela oficial.
-// Esta migration substitui a tabela inteira pelos valores reais usados no
-// dia-a-dia pela Baray. RELEVO/SILICON não tem coluna "demais cores" na
-// planilha — adotamos `demais = 1ª cor` (cobra-se cada cor pelo mesmo preço).
 void _migration006PrecosOficiais2026(Database raw) {
   raw.execute('DELETE FROM tabela_preco;');
 
   final seed = <List<Object>>[
-    // HIDRO — FRENTE/COSTAS
     ['HIDRO', 'FRENTE/COSTAS', '12-24', 4.90, 2.45],
     ['HIDRO', 'FRENTE/COSTAS', '25-50', 3.70, 1.85],
     ['HIDRO', 'FRENTE/COSTAS', '51-100', 3.00, 1.50],
     ['HIDRO', 'FRENTE/COSTAS', '100+', 2.40, 1.20],
-    // HIDRO — BOTTOM/NUCA
     ['HIDRO', 'BOTTOM/NUCA', '12-24', 3.90, 1.95],
     ['HIDRO', 'BOTTOM/NUCA', '25-50', 2.70, 1.35],
     ['HIDRO', 'BOTTOM/NUCA', '51-100', 2.00, 1.00],
     ['HIDRO', 'BOTTOM/NUCA', '100+', 1.60, 0.80],
-
-    // ELASTIC — FRENTE/COSTAS
     ['ELASTIC', 'FRENTE/COSTAS', '12-24', 5.40, 2.70],
     ['ELASTIC', 'FRENTE/COSTAS', '25-50', 4.20, 1.85],
     ['ELASTIC', 'FRENTE/COSTAS', '51-100', 3.50, 1.75],
     ['ELASTIC', 'FRENTE/COSTAS', '100+', 2.70, 1.20],
-    // ELASTIC — BOTTOM/NUCA
     ['ELASTIC', 'BOTTOM/NUCA', '12-24', 4.40, 2.20],
     ['ELASTIC', 'BOTTOM/NUCA', '25-50', 3.20, 1.60],
     ['ELASTIC', 'BOTTOM/NUCA', '51-100', 2.50, 1.20],
     ['ELASTIC', 'BOTTOM/NUCA', '100+', 2.10, 1.05],
-
-    // PLASTISOL GEL — FRENTE/COSTAS
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '12-24', 5.90, 3.90],
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '25-50', 4.70, 2.80],
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '51-100', 4.00, 2.00],
     ['PLASTISOL GEL', 'FRENTE/COSTAS', '100+', 3.40, 1.70],
-    // PLASTISOL GEL — BOTTOM/NUCA
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '12-24', 5.40, 3.40],
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '25-50', 4.20, 2.30],
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '51-100', 3.50, 1.75],
     ['PLASTISOL GEL', 'BOTTOM/NUCA', '100+', 2.60, 1.30],
-
-    // RELEVO/SILICON — só tem coluna 1ª cor na planilha; demais = 1ª.
     ['RELEVO/SILICON', 'FRENTE/COSTAS', '12-24', 8.00, 8.00],
     ['RELEVO/SILICON', 'FRENTE/COSTAS', '25-50', 6.75, 6.75],
     ['RELEVO/SILICON', 'FRENTE/COSTAS', '51-100', 5.75, 5.75],
@@ -442,13 +458,10 @@ void _migration006PrecosOficiais2026(Database raw) {
     ['RELEVO/SILICON', 'BOTTOM/NUCA', '25-50', 6.25, 6.25],
     ['RELEVO/SILICON', 'BOTTOM/NUCA', '51-100', 5.25, 5.25],
     ['RELEVO/SILICON', 'BOTTOM/NUCA', '100+', 4.50, 4.50],
-
-    // CROMIA — FRENTE/COSTAS (cor única, demais = 1ª)
     ['CROMIA', 'FRENTE/COSTAS', '12-24', 12.25, 12.25],
     ['CROMIA', 'FRENTE/COSTAS', '25-50', 9.25, 9.25],
     ['CROMIA', 'FRENTE/COSTAS', '51-100', 7.50, 7.50],
     ['CROMIA', 'FRENTE/COSTAS', '100+', 6.00, 6.00],
-    // CROMIA — BOTTOM/NUCA
     ['CROMIA', 'BOTTOM/NUCA', '12-24', 9.75, 9.75],
     ['CROMIA', 'BOTTOM/NUCA', '25-50', 6.75, 6.75],
     ['CROMIA', 'BOTTOM/NUCA', '51-100', 5.00, 5.00],
@@ -470,5 +483,46 @@ void _migration006PrecosOficiais2026(Database raw) {
       row[4],
     ]);
   }
-  stmt.dispose();
+  stmt.close();
+}
+
+// ── 007 — fechamento `data_fixa` migra para `dia_mes` (resolve loop)
+//
+// Sem coluna nova: o significado do tipo 'data_fixa' passa a ser
+// "todo mês no dia X", onde X é lido de `fechamento_dia`. Pra clientes que
+// já tinham `fechamento_data_fixa` populado, copiamos o dia (1-31) para
+// `fechamento_dia` e mudamos o tipo para 'mensal' (semântica equivalente).
+// A coluna `fechamento_data_fixa` permanece pra retro-compat de leitura, mas
+// não é mais consultada pelo cálculo de próxima data.
+void _migration007FechamentoDiaMes(Database raw) {
+  final candidatos = raw.select(
+    'SELECT id, fechamento_data_fixa FROM clientes '
+    "WHERE fechamento_tipo = 'data_fixa' AND fechamento_data_fixa IS NOT NULL",
+  );
+  for (final row in candidatos) {
+    final dataFixa = row['fechamento_data_fixa'] as String;
+    final dt = DateTime.tryParse(dataFixa);
+    if (dt == null) continue;
+    final dia = dt.day.clamp(1, 31);
+    raw.execute(
+      "UPDATE clientes SET fechamento_tipo = 'mensal', fechamento_dia = ?, "
+      'fechamento_data_fixa = NULL, atualizado_em = ? WHERE id = ?',
+      [dia, DateTime.now().toUtc().toIso8601String(), row['id']],
+    );
+  }
+}
+
+// ── 008 — limpeza de fechamento_id ao deletar fechamento (resolve dangling)
+//
+// `pedidos.fechamento_id` foi adicionado em 004 sem FK constraint. Migration
+// de tabela inteira é cara — trigger BEFORE DELETE é suficiente: zera as
+// referências antes do CASCADE descer pelos filhos.
+void _migration008FechamentoIdCleanup(Database raw) {
+  raw.execute('''
+    CREATE TRIGGER IF NOT EXISTS trg_fechamento_clean_pedidos
+    BEFORE DELETE ON cliente_fechamentos
+    BEGIN
+      UPDATE pedidos SET fechamento_id = NULL WHERE fechamento_id = OLD.id;
+    END;
+  ''');
 }

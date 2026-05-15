@@ -120,7 +120,7 @@ class Pedido {
         sinalPago: ((r['sinal_pago'] as num?) ?? 0).toDouble(),
         statusPagamento: (r['status_pagamento'] as String?) ?? 'devendo',
         status: r['status'] as String,
-        urgente: (r['urgente'] as int) == 1,
+        urgente: (r['urgente'] as int?) == 1,
         observacao: r['observacao'] as String?,
         regiao: r['regiao'] as String?,
         tipoPeca: r['tipo_peca'] as String?,

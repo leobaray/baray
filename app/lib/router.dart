@@ -23,6 +23,8 @@ CustomTransitionPage<T> _fadeSlidePage<T>({
     name: name,
     child: child,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      // WCAG 2.3.3: respeita "reduce motion" — sem fade nem slide.
+      if (MediaQuery.disableAnimationsOf(context)) return child;
       return FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
         child: SlideTransition(
@@ -55,7 +57,14 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/agenda',
-          pageBuilder: (c, s) => _fadeSlidePage(child: const AgendaScreen(), name: 'agenda'),
+          pageBuilder: (c, s) {
+            final diaStr = s.uri.queryParameters['dia'];
+            final dia = diaStr == null ? null : DateTime.tryParse(diaStr);
+            return _fadeSlidePage(
+              child: AgendaScreen(diaInicial: dia),
+              name: 'agenda',
+            );
+          },
         ),
         GoRoute(
           path: '/clientes',
@@ -85,7 +94,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/pedidos/:id',
       pageBuilder: (c, s) => _fadeSlidePage(
-        child: PedidoDetalheScreen(pedidoId: s.pathParameters['id']!),
+        child: PedidoDetalheScreen(
+          pedidoId: s.pathParameters['id']!,
+          from: s.uri.queryParameters['from'],
+        ),
         name: 'pedido-detalhe',
       ),
     ),

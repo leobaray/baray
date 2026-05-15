@@ -16,17 +16,22 @@ class ShimmerSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final reduzirMovimento = MediaQuery.disableAnimationsOf(context);
+    final box = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: borderRadius ?? BorderRadius.circular(8),
+      ),
+    );
+    // WCAG 2.2.2 / 2.3.3: respeita "reduce motion" do sistema — skeleton
+    // estático em vez do shimmer animado.
+    if (reduzirMovimento) return box;
     return Shimmer.fromColors(
       baseColor: scheme.surfaceContainerHighest,
       highlightColor: scheme.surfaceContainerHigh,
-      child: Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
-          borderRadius: borderRadius ?? BorderRadius.circular(8),
-        ),
-      ),
+      child: box,
     );
   }
 }

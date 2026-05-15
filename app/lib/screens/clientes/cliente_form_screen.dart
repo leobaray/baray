@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../api/api_client.dart';
 import '../../state/clientes_provider.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/list_skeleton.dart';
 
 class ClienteFormScreen extends ConsumerStatefulWidget {
   final String? clienteId;
@@ -29,24 +31,45 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
   bool _fechamentoAtivo = false;
   String? _fechamentoTipo;
   int? _fechamentoDia;
-  DateTime? _fechamentoDataFixa;
 
+  // Snapshot do estado inicial — _dirty é derivado por comparação com o
+  // snapshot, em vez de uma flag mutável (que ficava `true` se um listener
+  // disparasse durante _carregar mesmo sem mudança real do usuário).
+  _ClienteFormSnapshot _snapshot = _ClienteFormSnapshot.empty;
   bool _dirty = false;
 
   static const _diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
   bool get _isEdicao => widget.clienteId != null;
 
-  void _markDirty() {
-    if (!_dirty) _dirty = true;
+  _ClienteFormSnapshot _currentSnapshot() => _ClienteFormSnapshot(
+        nome: _nomeCtl.text,
+        telefone: _telefoneCtl.text,
+        email: _emailCtl.text,
+        endereco: _enderecoCtl.text,
+        observacao: _observacaoCtl.text,
+        fechamentoAtivo: _fechamentoAtivo,
+        fechamentoTipo: _fechamentoTipo,
+        fechamentoDia: _fechamentoDia,
+      );
+
+  void _capturarSnapshot() {
+    _snapshot = _currentSnapshot();
+    _dirty = false;
+  }
+
+  void _recheckDirty() {
+    final novo = _snapshot != _currentSnapshot();
+    if (novo != _dirty) setState(() => _dirty = novo);
   }
 
   @override
   void initState() {
     super.initState();
     for (final c in [_nomeCtl, _telefoneCtl, _emailCtl, _enderecoCtl, _observacaoCtl]) {
-      c.addListener(_markDirty);
+      c.addListener(_recheckDirty);
     }
+    _capturarSnapshot();
     if (_isEdicao) _carregar();
   }
 
@@ -62,13 +85,13 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
       _enderecoCtl.text = c.endereco ?? '';
       _observacaoCtl.text = c.observacao ?? '';
       _fechamentoAtivo = c.fechamentoAtivo;
-      _fechamentoTipo = c.fechamentoTipo;
+      // Clientes legados com tipo 'data_fixa' foram migrados pra 'mensal'
+      // pelo servidor (migration 007); se ainda chegar 'data_fixa' aqui,
+      // tratamos como 'mensal' pra UI ficar consistente.
+      _fechamentoTipo = c.fechamentoTipo == 'data_fixa' ? 'mensal' : c.fechamentoTipo;
       _fechamentoDia = c.fechamentoDia;
-      if (c.fechamentoDataFixa != null && c.fechamentoDataFixa!.isNotEmpty) {
-        _fechamentoDataFixa = DateTime.tryParse(c.fechamentoDataFixa!);
-      }
       _totalPedidosOriginal = c.totalPedidos;
-      _dirty = false;
+      _capturarSnapshot();
     } catch (e) {
       _erro = e.toString();
     } finally {
@@ -94,13 +117,6 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
       );
       return;
     }
-    if (_fechamentoAtivo && _fechamentoTipo == 'data_fixa' && _fechamentoDataFixa == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecione a data de fechamento')),
-      );
-      return;
-    }
-
     setState(() => _salvando = true);
     try {
       final api = ref.read(apiClientProvider);
@@ -113,13 +129,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
         'fechamento_ativo': _fechamentoAtivo,
         if (_fechamentoAtivo && _fechamentoTipo != null) ...{
           'fechamento_tipo': _fechamentoTipo,
-          if (_fechamentoTipo != 'data_fixa' && _fechamentoDia != null)
-            'fechamento_dia': _fechamentoDia,
-          if (_fechamentoTipo == 'data_fixa' && _fechamentoDataFixa != null)
-            'fechamento_data_fixa':
-                '${_fechamentoDataFixa!.year.toString().padLeft(4, '0')}-'
-                '${_fechamentoDataFixa!.month.toString().padLeft(2, '0')}-'
-                '${_fechamentoDataFixa!.day.toString().padLeft(2, '0')}',
+          if (_fechamentoDia != null) 'fechamento_dia': _fechamentoDia,
         },
       };
 
@@ -130,8 +140,16 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
         await api.criarCliente(body);
       }
       ref.invalidate(clientesProvider);
-      _dirty = false;
-      if (mounted) context.pop();
+      _capturarSnapshot();
+      if (mounted) {
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isEdicao ? 'Cliente atualizado' : 'Cliente criado'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _erro = e.toString());
     } finally {
@@ -169,7 +187,15 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
     try {
       await ref.read(apiClientProvider).deletarCliente(widget.clienteId!);
       ref.invalidate(clientesProvider);
-      if (mounted) context.pop();
+      if (mounted) {
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cliente "$nome" excluído'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -203,26 +229,12 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
     return ok ?? false;
   }
 
-  Future<void> _selecionarDataFixa() async {
-    final data = await showDatePicker(
-      context: context,
-      initialDate: _fechamentoDataFixa ?? DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
-      locale: const Locale('pt', 'BR'),
-    );
-    if (data != null) {
-      setState(() => _fechamentoDataFixa = data);
-      _markDirty();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_carregando) {
       return Scaffold(
         appBar: AppBar(title: Text(_isEdicao ? 'Editar cliente' : 'Novo cliente')),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const DetailSkeleton(),
       );
     }
 
@@ -253,6 +265,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
         ),
         body: Form(
           key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             children: [
@@ -270,6 +283,8 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                       ),
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'Obrigatório' : null,
                       textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.name],
+                      textCapitalization: TextCapitalization.words,
                     ),
                     const SizedBox(height: 10),
                     LayoutBuilder(
@@ -284,6 +299,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                           ),
                           keyboardType: TextInputType.phone,
                           textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.telephoneNumber],
                         );
                         final email = TextFormField(
                           controller: _emailCtl,
@@ -294,6 +310,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                           ),
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.email],
                         );
                         if (estreito) {
                           return Column(
@@ -320,6 +337,8 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                       ),
                       maxLines: 2,
                       textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.fullStreetAddress],
+                      textCapitalization: TextCapitalization.words,
                     ),
                     const SizedBox(height: 10),
                     TextFormField(
@@ -350,10 +369,9 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                           if (!v) {
                             _fechamentoTipo = null;
                             _fechamentoDia = null;
-                            _fechamentoDataFixa = null;
                           }
                         });
-                        _markDirty();
+                        _recheckDirty();
                       },
                     ),
                     if (_fechamentoAtivo) ...[
@@ -364,9 +382,8 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                           setState(() {
                             _fechamentoTipo = v;
                             _fechamentoDia = null;
-                            _fechamentoDataFixa = null;
                           });
-                          _markDirty();
+                          _recheckDirty();
                         },
                       ),
                       if (_fechamentoTipo == 'semanal') ...[
@@ -388,7 +405,7 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                           ),
                           onChanged: (v) {
                             setState(() => _fechamentoDia = v);
-                            _markDirty();
+                            _recheckDirty();
                           },
                         ),
                       ],
@@ -411,39 +428,8 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
                           ),
                           onChanged: (v) {
                             setState(() => _fechamentoDia = v);
-                            _markDirty();
+                            _recheckDirty();
                           },
-                        ),
-                      ],
-                      if (_fechamentoTipo == 'data_fixa') ...[
-                        const SizedBox(height: 10),
-                        InkWell(
-                          onTap: _selecionarDataFixa,
-                          borderRadius: BorderRadius.circular(10),
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: 'Data de fechamento',
-                              prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
-                              isDense: true,
-                              suffixIcon: _fechamentoDataFixa != null
-                                  ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
-                                  : null,
-                            ),
-                            child: Text(
-                              _fechamentoDataFixa != null
-                                  ? '${_fechamentoDataFixa!.day.toString().padLeft(2, '0')}/'
-                                      '${_fechamentoDataFixa!.month.toString().padLeft(2, '0')}/'
-                                      '${_fechamentoDataFixa!.year}'
-                                  : 'Selecionar data',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: _fechamentoDataFixa != null
-                                    ? Theme.of(context).colorScheme.onSurface
-                                    : Theme.of(context).hintColor,
-                                fontWeight: _fechamentoDataFixa != null ? FontWeight.w700 : FontWeight.w500,
-                              ),
-                            ),
-                          ),
                         ),
                       ],
                       if (_fechamentoTipo == 'quinzenal')
@@ -464,6 +450,67 @@ class _ClienteFormScreenState extends ConsumerState<ClienteFormScreen> {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SNAPSHOT (pra detectar dirty real comparando com estado inicial)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _ClienteFormSnapshot {
+  final String nome;
+  final String telefone;
+  final String email;
+  final String endereco;
+  final String observacao;
+  final bool fechamentoAtivo;
+  final String? fechamentoTipo;
+  final int? fechamentoDia;
+
+  const _ClienteFormSnapshot({
+    required this.nome,
+    required this.telefone,
+    required this.email,
+    required this.endereco,
+    required this.observacao,
+    required this.fechamentoAtivo,
+    required this.fechamentoTipo,
+    required this.fechamentoDia,
+  });
+
+  static const empty = _ClienteFormSnapshot(
+    nome: '',
+    telefone: '',
+    email: '',
+    endereco: '',
+    observacao: '',
+    fechamentoAtivo: false,
+    fechamentoTipo: null,
+    fechamentoDia: null,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ClienteFormSnapshot &&
+      other.nome == nome &&
+      other.telefone == telefone &&
+      other.email == email &&
+      other.endereco == endereco &&
+      other.observacao == observacao &&
+      other.fechamentoAtivo == fechamentoAtivo &&
+      other.fechamentoTipo == fechamentoTipo &&
+      other.fechamentoDia == fechamentoDia;
+
+  @override
+  int get hashCode => Object.hash(
+        nome,
+        telefone,
+        email,
+        endereco,
+        observacao,
+        fechamentoAtivo,
+        fechamentoTipo,
+        fechamentoDia,
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -489,21 +536,7 @@ class _Block extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: cs.primary),
-              const SizedBox(width: 6),
-              Text(
-                title.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.9,
-                  color: cs.primary,
-                ),
-              ),
-            ],
-          ),
+          BlockHeader(icon: icon, label: title),
           const SizedBox(height: 10),
           child,
         ],
@@ -559,20 +592,16 @@ class _AtivarTile extends StatelessWidget {
                         ? 'Cliente com ciclo de faturamento'
                         : 'Sem ciclo — pagamento por pedido',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       color: cs.onSurfaceVariant,
                     ),
                   ),
                 ],
               ),
             ),
-            SizedBox(
-              height: 28,
-              child: Switch(
-                value: ativo,
-                onChanged: onChanged,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
+            Switch(
+              value: ativo,
+              onChanged: onChanged,
             ),
           ],
         ),
@@ -590,7 +619,6 @@ class _TipoSelector extends StatelessWidget {
     ('semanal', 'Semanal', 'Um dia fixo por semana', Icons.calendar_view_week_outlined),
     ('quinzenal', 'Quinzenal', 'Dias 15 e fim do mês', Icons.date_range_outlined),
     ('mensal', 'Mensal', 'Um dia fixo por mês', Icons.calendar_month_outlined),
-    ('data_fixa', 'Data fixa', 'Uma data específica', Icons.event_available_outlined),
   ];
 
   @override
@@ -602,7 +630,7 @@ class _TipoSelector extends StatelessWidget {
         Text(
           'Tipo de fechamento',
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
             color: cs.onSurfaceVariant,
@@ -611,25 +639,14 @@ class _TipoSelector extends StatelessWidget {
         const SizedBox(height: 6),
         LayoutBuilder(
           builder: (context, c) {
-            final duasCol = c.maxWidth < 460;
-            if (duasCol) {
+            final estreito = c.maxWidth < 460;
+            if (estreito) {
               return Column(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(child: _opcao(context, _opcoes[0])),
-                      const SizedBox(width: 6),
-                      Expanded(child: _opcao(context, _opcoes[1])),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(child: _opcao(context, _opcoes[2])),
-                      const SizedBox(width: 6),
-                      Expanded(child: _opcao(context, _opcoes[3])),
-                    ],
-                  ),
+                  for (var i = 0; i < _opcoes.length; i++) ...[
+                    _opcao(context, _opcoes[i]),
+                    if (i < _opcoes.length - 1) const SizedBox(height: 6),
+                  ],
                 ],
               );
             }
@@ -692,7 +709,7 @@ class _TipoSelector extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 12,
                 color: selecionado
                     ? cs.onPrimaryContainer.withValues(alpha: 0.8)
                     : cs.onSurfaceVariant,

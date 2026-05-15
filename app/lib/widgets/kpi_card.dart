@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/spacing.dart';
+
 class KpiCard extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -27,7 +29,7 @@ class KpiCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.padMd),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -44,7 +46,7 @@ class KpiCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   if (onTap != null)
-                    Icon(Icons.arrow_forward, size: 14, color: theme.colorScheme.outline),
+                    Icon(Icons.arrow_forward, size: 14, color: theme.colorScheme.onSurfaceVariant),
                 ],
               ),
               const SizedBox(height: 10),
@@ -75,8 +77,7 @@ class KpiCard extends StatelessWidget {
                 Text(
                   hint!,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
-                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

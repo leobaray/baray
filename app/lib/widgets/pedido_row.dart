@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../models/pedido.dart';
 import '../theme/density.dart';
 import '../theme/spacing.dart';
+import '../util/formatters.dart';
 import 'status_pill.dart';
 
 /// Linha densa de pedido — usada na lista de Pedidos e Agenda.
@@ -33,13 +33,18 @@ class PedidoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
 
     final hoje = DateTime.now();
     final hojeData = DateTime(hoje.year, hoje.month, hoje.day);
-    final atrasado = pedido.dataEntregaCombinada != null &&
-        !pedido.entregue &&
-        pedido.dataEntregaCombinada!.isBefore(hojeData);
+    final diasAtraso = pedido.dataEntregaCombinada != null && !pedido.entregue
+        ? hojeData.difference(DateTime(
+            pedido.dataEntregaCombinada!.year,
+            pedido.dataEntregaCombinada!.month,
+            pedido.dataEntregaCombinada!.day,
+          )).inDays
+        : 0;
+    final atrasado = diasAtraso > 0;
 
     final Color accent;
     if (atrasado) {
@@ -88,7 +93,11 @@ class PedidoRow extends StatelessWidget {
                   const SizedBox(width: AppSpacing.gapSm),
                   Expanded(
                     flex: kClienteFlex,
-                    child: _ClienteCell(pedido: pedido),
+                    child: _ClienteCell(
+                      pedido: pedido,
+                      diasAtraso: diasAtraso,
+                      urgente: pedido.urgente,
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.gapSm),
                   Expanded(
@@ -142,29 +151,59 @@ class PedidoRow extends StatelessWidget {
 
 class _ClienteCell extends StatelessWidget {
   final Pedido pedido;
-  const _ClienteCell({required this.pedido});
+  final int diasAtraso;
+  final bool urgente;
+  const _ClienteCell({
+    required this.pedido,
+    this.diasAtraso = 0,
+    this.urgente = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tel = pedido.clienteTelefone;
     final temTel = tel != null && tel.isNotEmpty;
+    final atrasado = diasAtraso > 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          pedido.clienteNome,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: AppType.row,
-            fontWeight: FontWeight.w600,
-            color: cs.onSurface,
-            height: 1.15,
-          ),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                pedido.clienteNome,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: AppType.row,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface,
+                  height: 1.15,
+                ),
+              ),
+            ),
+            if (atrasado) ...[
+              const SizedBox(width: 6),
+              _AlertaTag(
+                icon: Icons.warning_amber_rounded,
+                label: 'ATRASADO ${diasAtraso}d',
+                bg: cs.errorContainer,
+                fg: cs.onErrorContainer,
+              ),
+            ] else if (urgente) ...[
+              const SizedBox(width: 6),
+              _AlertaTag(
+                icon: Icons.local_fire_department,
+                label: 'URGENTE',
+                bg: cs.tertiaryContainer,
+                fg: cs.onTertiaryContainer,
+              ),
+            ],
+          ],
         ),
         if (temTel)
           Text(
@@ -172,12 +211,53 @@ class _ClienteCell extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 10.5,
-              color: cs.outline,
+              fontSize: AppType.caption,
+              color: cs.onSurfaceVariant,
               height: 1.1,
             ),
           ),
       ],
+    );
+  }
+}
+
+class _AlertaTag extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color bg;
+  final Color fg;
+  const _AlertaTag({
+    required this.icon,
+    required this.label,
+    required this.bg,
+    required this.fg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: fg),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: AppType.overline,
+              fontWeight: FontWeight.w800,
+              color: fg,
+              letterSpacing: 0.4,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -272,13 +352,18 @@ class PedidoCardMobile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
 
     final hoje = DateTime.now();
     final hojeData = DateTime(hoje.year, hoje.month, hoje.day);
-    final atrasado = pedido.dataEntregaCombinada != null &&
-        !pedido.entregue &&
-        pedido.dataEntregaCombinada!.isBefore(hojeData);
+    final diasAtraso = pedido.dataEntregaCombinada != null && !pedido.entregue
+        ? hojeData.difference(DateTime(
+            pedido.dataEntregaCombinada!.year,
+            pedido.dataEntregaCombinada!.month,
+            pedido.dataEntregaCombinada!.day,
+          )).inDays
+        : 0;
+    final atrasado = diasAtraso > 0;
 
     final Color accent = atrasado
         ? cs.error
@@ -316,7 +401,7 @@ class PedidoCardMobile extends StatelessWidget {
                     Text(
                       pedido.loteFormatado,
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: AppType.code,
                         fontWeight: FontWeight.w800,
                         color: cs.primary,
                         fontFeatures: const [FontFeature.tabularFigures()],
@@ -330,17 +415,34 @@ class PedidoCardMobile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13.5,
+                          fontSize: AppType.bodyLg,
                           fontWeight: FontWeight.w700,
                           color: cs.onSurface,
                         ),
                       ),
                     ),
+                    if (atrasado) ...[
+                      const SizedBox(width: 6),
+                      _AlertaTag(
+                        icon: Icons.warning_amber_rounded,
+                        label: 'ATR ${diasAtraso}d',
+                        bg: cs.errorContainer,
+                        fg: cs.onErrorContainer,
+                      ),
+                    ] else if (pedido.urgente) ...[
+                      const SizedBox(width: 6),
+                      _AlertaTag(
+                        icon: Icons.local_fire_department,
+                        label: 'URG',
+                        bg: cs.tertiaryContainer,
+                        fg: cs.onTertiaryContainer,
+                      ),
+                    ],
                     const SizedBox(width: 8),
                     Text(
                       moeda.format(pedido.valor),
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppType.row,
                         fontWeight: FontWeight.w800,
                         color: cs.onSurface,
                         fontFeatures: const [FontFeature.tabularFigures()],
@@ -356,7 +458,7 @@ class PedidoCardMobile extends StatelessWidget {
                         peca,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
+                        style: TextStyle(fontSize: AppType.caption, color: cs.onSurfaceVariant),
                       ),
                     ),
                     const SizedBox(width: 8),

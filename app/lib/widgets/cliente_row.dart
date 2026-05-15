@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/cliente.dart';
 import '../theme/density.dart';
 import '../theme/spacing.dart';
+import '../util/formatters.dart';
 
 /// Linha densa de cliente — usada na lista master do split desktop e na
 /// lista full. Mostra avatar + nome + contato + valor total + badge de débito.
@@ -25,7 +26,7 @@ class ClienteRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
 
     // Selected tem prioridade visual; senão aplica zebra.
     final Color bg;
@@ -153,7 +154,7 @@ class _Avatar extends StatelessWidget {
       child: Text(
         iniciais,
         style: TextStyle(
-          fontSize: 11,
+          fontSize: AppType.pill,
           fontWeight: FontWeight.w800,
           color: selected ? cs.onPrimary : cs.onPrimaryContainer,
           letterSpacing: 0.3,
@@ -180,7 +181,7 @@ class _DebitoBadge extends StatelessWidget {
       child: Text(
         'deve ${moeda.format(valor)}',
         style: TextStyle(
-          fontSize: 10,
+          fontSize: AppType.pill,
           fontWeight: FontWeight.w700,
           color: cs.onErrorContainer,
           letterSpacing: 0.2,

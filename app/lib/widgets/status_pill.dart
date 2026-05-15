@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/density.dart';
+
 class StatusInfo {
   final Color bg;
   final Color fg;
@@ -14,8 +16,9 @@ StatusInfo statusInfo(BuildContext context, String status) {
   // Mantém clareza de leitura sem gritar.
   return switch (status) {
     'pendente' => StatusInfo(
+        // fg escurecido para passar AA Normal (ratio >= 5.0:1 antes era 4.38)
         bg: dark ? const Color(0xFF2B2419) : const Color(0xFFF5EDE0),
-        fg: dark ? const Color(0xFFDEB887) : const Color(0xFF8B6914),
+        fg: dark ? const Color(0xFFDEB887) : const Color(0xFF6B4F0C),
         label: 'Pendente',
         icon: Icons.schedule_outlined,
       ),
@@ -38,8 +41,9 @@ StatusInfo statusInfo(BuildContext context, String status) {
         icon: Icons.check_circle_outline,
       ),
     'entregue' => StatusInfo(
-        bg: dark ? const Color(0xFF0F2E28) : const Color(0xFFDFEFE9),
-        fg: dark ? const Color(0xFF7FBFAF) : const Color(0xFF2E6B5C),
+        // Diferencia visualmente de "Concluído" (verde claro) com teal escuro.
+        bg: dark ? const Color(0xFF0A2C38) : const Color(0xFFCFE4DD),
+        fg: dark ? const Color(0xFF7FB8C8) : const Color(0xFF134A40),
         label: 'Entregue',
         icon: Icons.local_shipping_outlined,
       ),
@@ -81,7 +85,7 @@ class PagamentoPill extends StatelessWidget {
         ),
       'parcial' => (
           dark ? const Color(0xFF2B2419) : const Color(0xFFF5EDE0),
-          dark ? const Color(0xFFDEB887) : const Color(0xFF8B6914),
+          dark ? const Color(0xFFDEB887) : const Color(0xFF6B4F0C),
           'Parcial',
           Icons.pending,
         ),
@@ -119,13 +123,13 @@ class _Pill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: small ? 11 : 13, color: fg),
+          Icon(icon, size: small ? 12 : 13, color: fg),
           SizedBox(width: small ? 4 : 6),
           Text(
             label,
             style: TextStyle(
               color: fg,
-              fontSize: small ? 10 : 11,
+              fontSize: AppType.pill,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.3,
             ),

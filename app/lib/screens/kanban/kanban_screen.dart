@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../api/api_client.dart';
 import '../../models/pedido.dart';
 import '../../state/pedidos_provider.dart';
 import '../../state/dashboard_provider.dart';
 import '../../theme/breakpoints.dart';
+import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/list_skeleton.dart';
 import '../../widgets/pedido_card.dart';
 import '../../widgets/status_pill.dart';
 
@@ -23,14 +24,6 @@ class KanbanScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Kanban'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-            onPressed: () {
-              ref.invalidate(pedidosProvider);
-              ref.invalidate(dashboardProvider);
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.list),
             tooltip: 'Lista',
@@ -69,7 +62,7 @@ class _KanbanViewState extends ConsumerState<KanbanView> with SingleTickerProvid
     final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.compact;
 
     return pedidos.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const ListSkeleton(itemHeight: 96),
       error: (e, _) => ErrorState(
         message: e.toString(),
         onRetry: () => ref.invalidate(pedidosProvider),
@@ -88,6 +81,8 @@ class _KanbanViewState extends ConsumerState<KanbanView> with SingleTickerProvid
 
         if (!wide) {
           // Mobile: tabs por status pra não ter scroll horizontal infinito.
+          // Long-press num card abre bottom sheet com opções de status
+          // (a única forma sensata de mover entre tabs em mobile).
           return Column(
             children: [
               TabBar(
@@ -116,6 +111,7 @@ class _KanbanViewState extends ConsumerState<KanbanView> with SingleTickerProvid
                         status: s,
                         pedidos: porStatus[s]!,
                         onMover: (p, ns) => _moverPedido(ref, context, p, ns),
+                        onAbrirMenuStatus: (p) => _abrirMenuStatus(context, p),
                         mobileMode: true,
                       ),
                   ],
@@ -138,6 +134,7 @@ class _KanbanViewState extends ConsumerState<KanbanView> with SingleTickerProvid
                     status: status,
                     pedidos: porStatus[status]!,
                     onMover: (p, ns) => _moverPedido(ref, context, p, ns),
+                    onAbrirMenuStatus: (p) => _abrirMenuStatus(context, p),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -149,16 +146,83 @@ class _KanbanViewState extends ConsumerState<KanbanView> with SingleTickerProvid
     );
   }
 
+  Future<void> _abrirMenuStatus(BuildContext context, Pedido pedido) async {
+    final escolha = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        final cs = Theme.of(sheetCtx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  child: Text(
+                    'Mover pedido para',
+                    style: Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                for (final s in _statusOrdem)
+                  ListTile(
+                    enabled: s != pedido.status,
+                    leading: Icon(statusInfo(sheetCtx, s).icon, color: statusInfo(sheetCtx, s).fg),
+                    title: Text(
+                      statusInfo(sheetCtx, s).label,
+                      style: TextStyle(
+                        fontWeight: s == pedido.status ? FontWeight.w400 : FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: s == pedido.status ? const Text('Status atual') : null,
+                    trailing: s == pedido.status
+                        ? Icon(Icons.check, color: cs.primary, size: 18)
+                        : const Icon(Icons.arrow_forward, size: 18),
+                    onTap: () => Navigator.of(sheetCtx).pop(s),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (escolha != null && context.mounted) {
+      await _moverPedido(ref, context, pedido, escolha);
+    }
+  }
+
   Future<void> _moverPedido(WidgetRef ref, BuildContext context, Pedido pedido, String novoStatus) async {
     if (pedido.status == novoStatus) return;
+    final statusOrigem = pedido.status;
     try {
       await ref.read(apiClientProvider).atualizarPedido(pedido.id, {'status': novoStatus});
       ref.invalidate(pedidosProvider);
       ref.invalidate(dashboardProvider);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pedido movido')),
-        );
+        final labelDestino = statusInfo(context, novoStatus).label;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Movido para $labelDestino'),
+              action: SnackBarAction(
+                label: 'Desfazer',
+                onPressed: () async {
+                  try {
+                    await ref.read(apiClientProvider).atualizarPedido(pedido.id, {'status': statusOrigem});
+                    ref.invalidate(pedidosProvider);
+                    ref.invalidate(dashboardProvider);
+                  } catch (_) {
+                    // silencioso — o usuário verá que não voltou
+                  }
+                },
+              ),
+            ),
+          );
       }
     } catch (e) {
       if (context.mounted) {
@@ -176,12 +240,14 @@ class _KanbanColuna extends StatelessWidget {
   final String status;
   final List<Pedido> pedidos;
   final Future<void> Function(Pedido, String) onMover;
+  final Future<void> Function(Pedido) onAbrirMenuStatus;
   final bool mobileMode;
 
   const _KanbanColuna({
     required this.status,
     required this.pedidos,
     required this.onMover,
+    required this.onAbrirMenuStatus,
     this.mobileMode = false,
   });
 
@@ -189,7 +255,7 @@ class _KanbanColuna extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final info = statusInfo(context, status);
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final moeda = AppFormatters.moeda;
     final total = pedidos.fold<double>(0, (s, p) => s + p.valor);
 
     final header = mobileMode
@@ -276,6 +342,22 @@ class _KanbanColuna extends StatelessWidget {
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
                     final p = pedidos[i];
+                    final card = PedidoCard(
+                      pedido: p,
+                      onTap: () => context.push('/pedidos/${p.id}?from=kanban'),
+                      onLongPress: () => onAbrirMenuStatus(p),
+                      compacto: true,
+                      showDragHandle: !mobileMode,
+                    );
+                    // Mobile: drag entre tabs não faz sentido — só toque/long-press
+                    // alternam status via bottom sheet. Em desktop, mantém Draggable.
+                    if (mobileMode) {
+                      return Semantics(
+                        button: true,
+                        label: 'Pedido — toque para abrir, segure para mudar status',
+                        child: card,
+                      );
+                    }
                     return Draggable<Pedido>(
                       data: p,
                       feedback: Material(
@@ -295,16 +377,12 @@ class _KanbanColuna extends StatelessWidget {
                       ),
                       childWhenDragging: Opacity(
                         opacity: 0.3,
-                        child: PedidoCard(
-                          pedido: p,
-                          onTap: () => context.push('/pedidos/${p.id}'),
-                          compacto: true,
-                        ),
+                        child: card,
                       ),
-                      child: PedidoCard(
-                        pedido: p,
-                        onTap: () => context.push('/pedidos/${p.id}'),
-                        compacto: true,
+                      child: Semantics(
+                        button: true,
+                        label: 'Pedido — toque para abrir, segure para mover',
+                        child: card,
                       ),
                     );
                   },

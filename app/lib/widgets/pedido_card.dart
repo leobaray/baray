@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../models/pedido.dart';
 import '../theme/spacing.dart';
 import '../theme/status_colors.dart';
+import '../util/formatters.dart';
 import 'status_pill.dart';
 import 'tint_chip.dart';
 
@@ -11,19 +11,23 @@ import 'tint_chip.dart';
 class PedidoCard extends StatelessWidget {
   final Pedido pedido;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool compacto;
+  final bool showDragHandle;
   const PedidoCard({
     super.key,
     required this.pedido,
     required this.onTap,
+    this.onLongPress,
     this.compacto = false,
+    this.showDragHandle = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final dataFmt = DateFormat('dd/MM', 'pt_BR');
+    final moeda = AppFormatters.moeda;
+    final dataFmt = AppFormatters.dataCurta;
 
     final hoje = DateTime.now();
     final hojeData = DateTime(hoje.year, hoje.month, hoje.day);
@@ -88,6 +92,7 @@ class PedidoCard extends StatelessWidget {
     return Card(
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: EdgeInsets.all(compacto ? 14 : 18),
@@ -97,6 +102,15 @@ class PedidoCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  if (showDragHandle) ...[
+                    Icon(
+                      Icons.drag_indicator,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      semanticLabel: 'Arrastar',
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
@@ -203,7 +217,7 @@ class _UrgenteChip extends StatelessWidget {
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onErrorContainer,
               fontWeight: FontWeight.w700,
-              fontSize: 11,
+              fontSize: 12,
               letterSpacing: 0.4,
             ),
           ),

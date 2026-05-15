@@ -7,6 +7,7 @@ import '../../models/agenda.dart';
 import '../../models/pedido.dart';
 import '../../state/agenda_provider.dart';
 import '../../theme/breakpoints.dart';
+import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/pedido_row.dart';
 import '../../widgets/shimmer_skeleton.dart';
@@ -15,16 +16,38 @@ import '../../widgets/status_pill.dart';
 enum _Modo { lista, semana, mes }
 
 class AgendaScreen extends ConsumerStatefulWidget {
-  const AgendaScreen({super.key});
+  /// Data inicial opcional (`?dia=YYYY-MM-DD`). Quando informada, centraliza
+  /// na semana correspondente e troca pro modo semana se estiver fora da janela
+  /// padrão "hoje+14 dias" da lista.
+  final DateTime? diaInicial;
+
+  const AgendaScreen({super.key, this.diaInicial});
 
   @override
   ConsumerState<AgendaScreen> createState() => _AgendaScreenState();
 }
 
 class _AgendaScreenState extends ConsumerState<AgendaScreen> {
-  _Modo _modo = _Modo.lista;
+  late _Modo _modo;
   // Referência do período selecionado — usado pelos modos Semana e Mês.
-  DateTime _referencia = DateTime.now();
+  late DateTime _referencia;
+
+  @override
+  void initState() {
+    super.initState();
+    final hoje = DateTime.now();
+    final inicial = widget.diaInicial;
+    _referencia = inicial ?? hoje;
+    if (inicial == null) {
+      _modo = _Modo.lista;
+    } else {
+      final hojeMid = DateTime(hoje.year, hoje.month, hoje.day);
+      final alvo = DateTime(inicial.year, inicial.month, inicial.day);
+      final diff = alvo.difference(hojeMid).inDays;
+      // Lista cobre hoje + 13 dias; fora dessa janela, semana fica mais útil.
+      _modo = (diff >= 0 && diff <= 13) ? _Modo.lista : _Modo.semana;
+    }
+  }
 
   String _yyyymmdd(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -59,11 +82,6 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
       appBar: AppBar(
         title: const Text('Agenda'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-            onPressed: () => ref.invalidate(agendaOcupacaoProvider(range)),
-          ),
         ],
       ),
       body: async.when(
@@ -199,7 +217,7 @@ class _NavPeriodo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final diaNum = DateFormat('dd/MM', 'pt_BR');
+    final diaNum = AppFormatters.dataCurta;
     final mesAno = DateFormat("MMMM' 'y", 'pt_BR');
 
     String label;
@@ -417,7 +435,7 @@ class _GapVazio extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final dias = fim.difference(inicio).inDays + 1;
-    final diaNum = DateFormat('dd/MM', 'pt_BR');
+    final diaNum = AppFormatters.dataCurta;
     return Material(
       color: cs.surfaceContainerLow.withValues(alpha: 0.5),
       borderRadius: BorderRadius.circular(8),
@@ -435,7 +453,7 @@ class _GapVazio extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.more_horiz, size: 14, color: cs.outline),
+              Icon(Icons.more_horiz, size: 14, color: cs.onSurfaceVariant),
               const SizedBox(width: 8),
               Text(
                 '$dias dias livres',
@@ -451,11 +469,11 @@ class _GapVazio extends StatelessWidget {
                 '· ${diaNum.format(inicio)} a ${diaNum.format(fim)}',
                 style: TextStyle(
                   fontSize: 11,
-                  color: cs.outline,
+                  color: cs.onSurfaceVariant,
                 ),
               ),
               const Spacer(),
-              Icon(Icons.add, size: 14, color: cs.outline),
+              Icon(Icons.add, size: 14, color: cs.onSurfaceVariant),
             ],
           ),
         ),
@@ -478,7 +496,7 @@ class _DiaListaCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final dataFmt = DateFormat("EEE', 'dd/MM", 'pt_BR');
     final labelData = _capitalizar(dataFmt.format(dia.data));
     final pct = (dia.pct).clamp(0.0, 1.0);
@@ -513,7 +531,7 @@ class _DiaListaCard extends StatelessWidget {
                     child: Text(
                       'HOJE',
                       style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
                         color: cs.onPrimaryContainer,
                         letterSpacing: 0.5,
@@ -557,8 +575,8 @@ class _DiaListaCard extends StatelessWidget {
                 Text(
                   ' / ${moeda.format(dia.limite)}',
                   style: TextStyle(
-                    fontSize: 10.5,
-                    color: cs.outline,
+                    fontSize: 12,
+                    color: cs.onSurfaceVariant,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -612,7 +630,7 @@ class _AgendaLinha extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final hojeData = DateTime.now();
     final atrasado = pedido.dataEntregaCombinada != null &&
         !pedido.entregue &&
@@ -634,7 +652,7 @@ class _AgendaLinha extends StatelessWidget {
     return Material(
       color: zebra ? cs.surfaceContainerLow.withValues(alpha: 0.5) : Colors.transparent,
       child: InkWell(
-        onTap: () => context.push('/pedidos/${pedido.id}'),
+        onTap: () => context.push('/pedidos/${pedido.id}?from=agenda'),
         child: DecoratedBox(
           decoration: BoxDecoration(
             border: Border(
@@ -724,26 +742,10 @@ class _DiaVazioInline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return InkWell(
+    return EmptyState.inline(
+      icon: Icons.add_circle_outline,
+      titulo: 'Sem pedidos · toque para adicionar',
       onTap: onCriar,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-        child: Row(
-          children: [
-            Icon(Icons.add_circle_outline, size: 16, color: cs.outline),
-            const SizedBox(width: 8),
-            Text(
-              'Sem pedidos · toque para adicionar',
-              style: TextStyle(
-                fontSize: 12.5,
-                color: cs.outline,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -769,6 +771,7 @@ class _ModoSemanaView extends StatefulWidget {
 
 class _ModoSemanaViewState extends State<_ModoSemanaView> {
   late PageController _pc;
+  final ScrollController _chipsCtl = ScrollController();
   int _paginaAtual = 0;
 
   @override
@@ -797,7 +800,21 @@ class _ModoSemanaViewState extends State<_ModoSemanaView> {
   @override
   void dispose() {
     _pc.dispose();
+    _chipsCtl.dispose();
     super.dispose();
+  }
+
+  void _centralizarChip(int i) {
+    if (!_chipsCtl.hasClients) return;
+    // Material 3: a tab selecionada deve sempre estar visível.
+    const larguraEstimadaChip = 110.0; // chip largura média + gap
+    final alvo = (i * larguraEstimadaChip) - 80.0;
+    final destino = alvo.clamp(0.0, _chipsCtl.position.maxScrollExtent);
+    _chipsCtl.animateTo(
+      destino,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
   }
 
   List<DiaAgenda> _filtrarUteis(List<DiaAgenda> dias) {
@@ -862,6 +879,7 @@ class _ModoSemanaViewState extends State<_ModoSemanaView> {
               child: SizedBox(
                 height: 40,
                 child: ListView.separated(
+                  controller: _chipsCtl,
                   scrollDirection: Axis.horizontal,
                   itemCount: diasUteis.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 6),
@@ -878,7 +896,7 @@ class _ModoSemanaViewState extends State<_ModoSemanaView> {
                           ? Icon(Icons.today, size: 14, color: cs.primary)
                           : null,
                       label: Text(
-                        '${_curto(dia.data)} ${DateFormat('dd/MM', 'pt_BR').format(dia.data)}',
+                        '${_curto(dia.data)} ${AppFormatters.dataCurta.format(dia.data)}',
                         style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
                       onSelected: (_) {
@@ -895,7 +913,10 @@ class _ModoSemanaViewState extends State<_ModoSemanaView> {
               child: PageView.builder(
                 controller: _pc,
                 itemCount: diasUteis.length,
-                onPageChanged: (i) => setState(() => _paginaAtual = i),
+                onPageChanged: (i) {
+                  setState(() => _paginaAtual = i);
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _centralizarChip(i));
+                },
                 itemBuilder: (_, i) => Padding(
                   padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
                   child: _ColunaSemana(
@@ -921,7 +942,7 @@ class _ColunaSemana extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final hoje = DateTime.now();
     final isHoje = dia.data.year == hoje.year &&
         dia.data.month == hoje.month &&
@@ -951,7 +972,7 @@ class _ColunaSemana extends StatelessWidget {
                 Text(
                   _curto(dia.data),
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.8,
                     color: isHoje ? cs.onPrimaryContainer : cs.onSurfaceVariant,
@@ -959,7 +980,7 @@ class _ColunaSemana extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  DateFormat('dd/MM', 'pt_BR').format(dia.data),
+                  AppFormatters.dataCurta.format(dia.data),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -978,7 +999,7 @@ class _ColunaSemana extends StatelessWidget {
                     child: Text(
                       '${dia.pedidos.length}',
                       style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w800,
                         color: cs.onSurfaceVariant,
                       ),
@@ -1007,7 +1028,7 @@ class _ColunaSemana extends StatelessWidget {
             child: Text(
               '${moeda.format(dia.ocupado)} / ${moeda.format(dia.limite)}',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 12,
                 color: dia.acima ? cs.error : cs.onSurfaceVariant,
                 fontWeight: dia.acima ? FontWeight.w800 : FontWeight.w600,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -1024,11 +1045,11 @@ class _ColunaSemana extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.add_circle_outline, size: 22, color: cs.outline),
+                          Icon(Icons.add_circle_outline, size: 22, color: cs.onSurfaceVariant),
                           const SizedBox(height: 4),
                           Text(
                             'Adicionar',
-                            style: TextStyle(fontSize: 11, color: cs.outline, fontWeight: FontWeight.w600),
+                            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant, fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -1070,14 +1091,14 @@ class _MiniPedido extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     return Material(
       color: pedido.urgente
           ? cs.errorContainer.withValues(alpha: 0.35)
           : cs.surfaceContainerLow,
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
-        onTap: () => context.push('/pedidos/${pedido.id}'),
+        onTap: () => context.push('/pedidos/${pedido.id}?from=agenda'),
         borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(7, 5, 7, 5),
@@ -1090,7 +1111,7 @@ class _MiniPedido extends StatelessWidget {
                   Text(
                     pedido.loteFormatado,
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: cs.primary,
                       fontFeatures: const [FontFeature.tabularFigures()],
@@ -1123,13 +1144,13 @@ class _MiniPedido extends StatelessWidget {
                       ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant),
+                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                     ),
                   ),
                   Text(
                     moeda.format(pedido.valor),
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: cs.onSurface,
                       fontFeatures: const [FontFeature.tabularFigures()],
@@ -1288,10 +1309,12 @@ class _Calendario extends StatelessWidget {
                     child: Text(
                       diasSemana[i],
                       style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.8,
-                        color: i >= 5 ? cs.outline : cs.onSurfaceVariant,
+                        color: i >= 5
+                            ? cs.onSurfaceVariant.withValues(alpha: 0.7)
+                            : cs.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -1367,9 +1390,12 @@ class _CelulaDia extends StatelessWidget {
     final numPedidos = dia?.pedidos.length ?? 0;
 
     // Heatmap: tons de primaryContainer conforme ocupação.
+    // Dias fora do mês ficam num bg levemente acinzentado (em vez de alpha
+    // no texto, que cairia para 2.21:1) e mantêm texto cheio em
+    // onSurfaceVariant — distinguível dos dias do mês sem perder leitura.
     final Color bg;
     if (!dentroMes) {
-      bg = cs.surfaceContainerLowest;
+      bg = cs.surfaceContainerLow;
     } else if (acima) {
       bg = cs.errorContainer.withValues(alpha: 0.55);
     } else if (pct <= 0) {
@@ -1382,7 +1408,7 @@ class _CelulaDia extends StatelessWidget {
       bg = cs.primaryContainer.withValues(alpha: 0.75);
     }
 
-    final Color fg = dentroMes ? cs.onSurface : cs.outline.withValues(alpha: 0.6);
+    final Color fg = dentroMes ? cs.onSurface : cs.onSurfaceVariant;
 
     Color? borderColor;
     double borderWidth = 1;
@@ -1425,7 +1451,7 @@ class _CelulaDia extends StatelessWidget {
                   Text(
                     '$numPedidos',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: acima ? cs.error : cs.onSurfaceVariant,
                     ),
@@ -1460,16 +1486,17 @@ class _Legenda extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 12,
-              height: 12,
+              width: 14,
+              height: 14,
               decoration: BoxDecoration(
                 color: c,
                 borderRadius: BorderRadius.circular(3),
-                border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+                // SC 1.4.11 non-text contrast: borda visível >= 3:1.
+                border: Border.all(color: cs.outline),
               ),
             ),
             const SizedBox(width: 4),
-            Text(label, style: TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant)),
+            Text(label, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
           ],
         );
 
@@ -1511,20 +1538,31 @@ class _DetalheDia extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.touch_app_outlined, size: 36, color: cs.outline),
-              const SizedBox(height: 10),
+              // Seta + ícone direcionam o olhar pro calendário à esquerda —
+              // sem isso o usuário fica perdido com "Selecione um dia" solto.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.arrow_back, size: 22, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Icon(Icons.calendar_today_outlined, size: 28, color: cs.primary),
+                ],
+              ),
+              const SizedBox(height: 14),
               Text(
-                'Selecione um dia',
+                'Toque em um dia no calendário',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: cs.onSurfaceVariant,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: cs.onSurface,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 'O detalhe do dia aparece aqui.',
-                style: TextStyle(fontSize: 11.5, color: cs.outline),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
               ),
             ],
           ),
@@ -1534,7 +1572,7 @@ class _DetalheDia extends StatelessWidget {
 
     final data = dataSelecionada!;
     final dataFmt = DateFormat("EEEE', 'd 'de' MMMM", 'pt_BR');
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final isHoje = _chaveData(data) == _chaveData(DateTime.now());
 
     final content = Column(
@@ -1563,7 +1601,7 @@ class _DetalheDia extends StatelessWidget {
                             child: Text(
                               'HOJE',
                               style: TextStyle(
-                                fontSize: 9.5,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w800,
                                 color: cs.onPrimaryContainer,
                                 letterSpacing: 0.6,
@@ -1627,7 +1665,7 @@ class _DetalheDia extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
             child: Column(
               children: [
-                Icon(Icons.inbox_outlined, size: 28, color: cs.outline),
+                Icon(Icons.inbox_outlined, size: 28, color: cs.onSurfaceVariant),
                 const SizedBox(height: 6),
                 Text(
                   'Sem pedidos neste dia',
@@ -1655,7 +1693,7 @@ class _DetalheDia extends StatelessWidget {
           for (var i = 0; i < dia!.pedidos.length; i++)
             PedidoRow(
               pedido: dia!.pedidos[i],
-              onTap: () => context.push('/pedidos/${dia!.pedidos[i].id}'),
+              onTap: () => context.push('/pedidos/${dia!.pedidos[i].id}?from=agenda'),
               zebra: i.isOdd,
             ),
         ],
@@ -1718,7 +1756,7 @@ String _chaveData(DateTime d) =>
 /// Abreviação curta do dia da semana (pt_BR vem com ponto — tiramos e
 /// caixamos alto pra ficar consistente).
 String _curto(DateTime d) {
-  final raw = DateFormat('EEE', 'pt_BR').format(d);
+  final raw = AppFormatters.diaSemana.format(d);
   final sem = raw.replaceAll('.', '').trim();
   if (sem.isEmpty) return '';
   return sem[0].toUpperCase() + sem.substring(1).toLowerCase();

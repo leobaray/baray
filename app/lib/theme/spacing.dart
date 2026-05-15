@@ -35,19 +35,57 @@ class AppSpacing {
   static const double padLg = 20;
 }
 
-/// Raios de borda padronizados.
+/// Convenções de botão — fonte única para "quando usar o quê".
+///
+/// **FAB (FloatingActionButton):** ação primária de uma tela inteira.
+///   - Use `FloatingActionButton.extended` em telas de lista (Pedidos,
+///     Clientes, Dashboard) — texto explícito vence a ambiguidade do "+" solto.
+///   - Use `FloatingActionButton` (round, sem label) só quando o ícone for
+///     universalmente reconhecível (raro neste app).
+///   - Posição padrão: `floatingActionButtonLocation: FloatingActionButtonLocation.endFloat`.
+///
+/// **IconButton:** ações dentro de cards/linhas ou na AppBar.
+///   - Sempre garanta touch target de 44×44 dp:
+///       `IconButton(constraints: BoxConstraints(minWidth: 44, minHeight: 44))`
+///     ou `IconButton.filledTonal/.outlined` (já têm padding adequado).
+///   - Use `tooltip` para acessibilidade — todo IconButton precisa.
+///
+/// **FilledButton / TextButton / OutlinedButton:** ações inline em forms,
+/// diálogos, footers. Não confundir com FAB.
+///
+/// **Resumo:**
+/// | Onde            | Use                              |
+/// |-----------------|----------------------------------|
+/// | Tela primária   | `FAB.extended` com label         |
+/// | AppBar          | `IconButton` com tooltip         |
+/// | Dentro de card  | `IconButton` 44×44 com tooltip   |
+/// | Form / dialog   | `FilledButton` / `TextButton`    |
+class AppButtons {
+  AppButtons._();
+
+  /// Touch target mínimo (WCAG 2.5.5 AA recomenda 44dp).
+  static const double minTouchTarget = 44;
+}
+
+/// Tokens de border radius. Use em vez de hardcodar `BorderRadius.circular(N)`.
 class AppRadius {
   AppRadius._();
 
-  /// Raio pequeno (6px) — badges, pills compactos.
-  static const double sm = 6;
+  /// Radius mínimo (4px) — tags, badges densos.
+  static const double xs = 4;
 
-  /// Raio médio (10px) — inputs, botões, linhas de tabela.
-  static const double md = 10;
+  /// Radius pequeno (8px) — chips, pills internos, micro-cards.
+  static const double sm = 8;
 
-  /// Raio grande (14px) — cards.
-  static const double lg = 14;
+  /// Radius médio (12px) — inputs, dropdowns, banners.
+  static const double md = 12;
 
-  /// Pill — botões redondos / chips.
+  /// Radius grande (16px) — cards padrão, FABs.
+  static const double lg = 16;
+
+  /// Radius extra (20px) — bottom sheets, dialogs.
+  static const double xl = 20;
+
+  /// Forma pill (999) — chips arredondados, status pills.
   static const double pill = 999;
 }

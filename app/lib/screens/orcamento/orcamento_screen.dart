@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../api/api_client.dart';
 import '../../models/orcamento.dart';
 import '../../state/orcamento_provider.dart';
+import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
 
 class OrcamentoScreen extends ConsumerStatefulWidget {
@@ -101,24 +101,27 @@ class _OrcamentoScreenState extends ConsumerState<OrcamentoScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final moeda = AppFormatters.moeda;
     final tecnicas = ref.watch(tecnicasProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Calculadora de orçamento')),
-      persistentFooterButtons: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _calculando ? null : _calcular,
-            icon: _calculando
-                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.calculate_outlined),
-            label: const Text('Calcular'),
-            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _calculando ? null : _calcular,
+              icon: _calculando
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.calculate_outlined),
+              label: const Text('Calcular'),
+              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+            ),
           ),
         ),
-      ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         children: [

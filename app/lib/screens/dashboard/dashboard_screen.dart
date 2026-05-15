@@ -8,7 +8,9 @@ import '../../models/pedido.dart';
 import '../../state/dashboard_provider.dart';
 import '../../state/pedidos_provider.dart';
 import '../../theme/density.dart';
+import '../../theme/spacing.dart';
 import '../../theme/status_colors.dart';
+import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/pedido_form_sheet.dart';
 import '../../widgets/pedido_row.dart';
@@ -47,11 +49,6 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-            onPressed: () => ref.invalidate(dashboardProvider),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -317,7 +314,7 @@ class _HighlightMetric extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             color: cs.onSurfaceVariant,
             letterSpacing: 0.3,
@@ -338,7 +335,7 @@ class _KpisRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final cs = Theme.of(context).colorScheme;
     final warning = statusColors(context, StatusTone.warning).fg;
 
@@ -462,14 +459,14 @@ class _KpiTile extends StatelessWidget {
                   ),
                   const Spacer(),
                   if (onTap != null)
-                    Icon(Icons.arrow_forward, size: 12, color: cs.outline),
+                    Icon(Icons.arrow_forward, size: 12, color: cs.onSurfaceVariant),
                 ],
               ),
               const SizedBox(height: 10),
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 10.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
                   color: cs.onSurfaceVariant,
@@ -497,8 +494,8 @@ class _KpiTile extends StatelessWidget {
                 Text(
                   hint!,
                   style: TextStyle(
-                    fontSize: 10.5,
-                    color: cs.outline,
+                    fontSize: 12,
+                    color: cs.onSurfaceVariant,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -529,27 +526,13 @@ class _DestaquesCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
       ),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.all(AppSpacing.padMd),
       child: DefaultTabController(
         length: 3,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Icon(Icons.star_outline, size: 14, color: cs.primary),
-                const SizedBox(width: 6),
-                Text(
-                  'PRÓXIMOS DESTAQUES',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.9,
-                    color: cs.primary,
-                  ),
-                ),
-              ],
-            ),
+            const BlockHeader(icon: Icons.star_outline, label: 'Próximos destaques'),
             const SizedBox(height: 8),
             TabBar(
               isScrollable: true,
@@ -614,7 +597,7 @@ class _DestaquesCard extends StatelessWidget {
             child: Text(
               '$count',
               style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
                 color: count > 0 ? cs.onPrimaryContainer : cs.onSurfaceVariant,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -645,36 +628,12 @@ class _DestaqueLista extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     if (pedidos.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(emptyIcon, size: 32, color: cs.outline),
-              const SizedBox(height: 10),
-              Text(
-                emptyTitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (emptyCta != null && onEmptyCta != null) ...[
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: onEmptyCta,
-                  icon: const Icon(Icons.arrow_forward, size: 14),
-                  label: Text(emptyCta!),
-                ),
-              ],
-            ],
-          ),
-        ),
+      return EmptyState.compact(
+        icon: emptyIcon,
+        titulo: emptyTitle,
+        ctaLabel: emptyCta,
+        onCta: onEmptyCta,
       );
     }
     return Column(
@@ -685,7 +644,7 @@ class _DestaqueLista extends StatelessWidget {
             itemCount: pedidos.length,
             itemBuilder: (_, i) => PedidoRow(
               pedido: pedidos[i],
-              onTap: () => context.push('/pedidos/${pedidos[i].id}'),
+              onTap: () => context.push('/pedidos/${pedidos[i].id}?from=dashboard'),
               zebra: i.isOdd,
             ),
           ),
@@ -706,7 +665,7 @@ class _OcupacaoCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final diaCurto = DateFormat('EEE d', 'pt_BR');
 
     return Container(
@@ -715,45 +674,34 @@ class _OcupacaoCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
       ),
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      padding: const EdgeInsets.all(AppSpacing.padMd),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(Icons.bar_chart, size: 14, color: cs.primary),
-              const SizedBox(width: 6),
-              Text(
-                'OCUPAÇÃO DA SEMANA',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.9,
-                  color: cs.primary,
-                ),
-              ),
-              const Spacer(),
-              InkWell(
-                onTap: () => context.go('/agenda'),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  child: Row(
-                    children: [
-                      Text(
-                        'agenda',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: cs.primary,
-                        ),
+          BlockHeader(
+            icon: Icons.bar_chart,
+            label: 'Ocupação da semana',
+            trailing: InkWell(
+              onTap: () => context.go('/agenda'),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'agenda',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: cs.primary,
                       ),
-                      Icon(Icons.arrow_forward, size: 12, color: cs.primary),
-                    ],
-                  ),
+                    ),
+                    Icon(Icons.arrow_forward, size: 12, color: cs.primary),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
           const SizedBox(height: 10),
           for (final dia in stats.ocupacaoSemana)
@@ -846,7 +794,7 @@ class _OcupacaoBar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.end,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 12,
                 color: dia.estourado ? cs.error : cs.onSurfaceVariant,
                 fontWeight: dia.estourado ? FontWeight.w800 : FontWeight.w600,
                 fontFeatures: const [FontFeature.tabularFigures()],

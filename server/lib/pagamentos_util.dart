@@ -1,6 +1,7 @@
 import 'package:sqlite3/sqlite3.dart';
 
-/// Recalcula e ajusta o status_pagamento do pedido com base nos pagamentos.
+/// Recalcula `valor_pago` (cache derivado de `pedido_pagamentos`) e ajusta
+/// `status_pagamento`. Aceita uma tolerância de R\$ 0,01 para arredondamentos.
 void recalcularPagamento(Database raw, String pedidoId) {
   final pedidoRows = raw.select('SELECT valor FROM pedidos WHERE id=?', [pedidoId]);
   if (pedidoRows.isEmpty) return;
@@ -12,7 +13,7 @@ void recalcularPagamento(Database raw, String pedidoId) {
   ).first;
   final pago = (somaRow['s'] as num).toDouble();
 
-  String status;
+  final String status;
   if (pago >= valorTotal - 0.01) {
     status = 'pago';
   } else if (pago > 0.01) {
@@ -23,6 +24,6 @@ void recalcularPagamento(Database raw, String pedidoId) {
 
   raw.execute(
     'UPDATE pedidos SET valor_pago=?, status_pagamento=?, atualizado_em=? WHERE id=?',
-    [pago, status, DateTime.now().toIso8601String(), pedidoId],
+    [pago, status, DateTime.now().toUtc().toIso8601String(), pedidoId],
   );
 }

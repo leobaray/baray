@@ -4,10 +4,23 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 
-import '../db.dart';
-import '../models/pedido.dart';
 import '../agendador.dart';
+import '../db.dart';
+import '../logger.dart';
+import '../models/pedido.dart';
 import '../pagamentos_util.dart';
+import '../validators.dart';
+
+/// Colunas explícitas (M-10) — manter em sincronia com `Pedido.fromRow`.
+const String _pedidoCols =
+    'id, lote, cliente_id, cliente_nome, cliente_telefone, cliente_email, '
+    'descricao, peca, tecnica, quantidade, valor, '
+    'cor_peca, tamanho_peca, tecido, '
+    'arte_cores, arte_tamanho_cm, arte_posicao, arte_observacao, '
+    'data_chegada, data_producao, prazo_dias, agendamento_fixo, '
+    'forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por, '
+    'forma_pagamento, valor_pago, sinal_pago, status_pagamento, '
+    'status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em';
 
 Router pedidosRouter(Db db) {
   final r = Router();
@@ -59,7 +72,7 @@ Router pedidosRouter(Db db) {
       args.add(qp['ate']);
     }
 
-    final sql = StringBuffer('SELECT * FROM pedidos');
+    final sql = StringBuffer('SELECT $_pedidoCols FROM pedidos');
     if (where.isNotEmpty) sql.write(' WHERE ${where.join(' AND ')}');
 
     final ordem = switch (qp['ordenar']) {
@@ -78,38 +91,32 @@ Router pedidosRouter(Db db) {
 
   // ── Detalhe ────────────────────────────────────────────────────────────
   r.get('/<id>', (Request req, String id) {
-    final rows = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]);
+    final rows = db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [id]);
     if (rows.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
     return json(Pedido.fromRow(rows.first).toJson());
   });
 
   // ── Criar ──────────────────────────────────────────────────────────────
   r.post('/', (Request req) async {
-    final raw = await req.readAsString();
-    print('[POST /pedidos] body=$raw');
-    final body = jsonDecode(raw) as Map<String, dynamic>;
-    final clienteNome = (body['cliente_nome'] as String?)?.trim();
-    final descricao = (body['descricao'] as String?)?.trim();
-    final valor = (body['valor'] as num?)?.toDouble();
-    if (clienteNome == null || clienteNome.isEmpty) {
-      print('[POST /pedidos] 400: cliente_nome vazio');
-      return json({'error': 'cliente_nome é obrigatório'}, status: 400);
-    }
-    if (descricao == null || descricao.isEmpty) {
-      print('[POST /pedidos] 400: descricao vazia');
-      return json({'error': 'descricao é obrigatória'}, status: 400);
-    }
-    if (valor == null) {
-      print('[POST /pedidos] 400: valor nulo');
-      return json({'error': 'valor é obrigatório'}, status: 400);
+    final rawBody = await req.readAsString();
+    final Map<String, dynamic> body;
+    try {
+      body = jsonDecode(rawBody) as Map<String, dynamic>;
+    } catch (_) {
+      return json({'error': 'body inválido'}, status: 400);
     }
 
-    // Se veio cliente_id mas não nome, buscar nome
+    final erro = validarPedido(body, criar: true);
+    if (erro != null) {
+      requestLog.info('POST /pedidos 400 $erro');
+      return json({'error': erro}, status: 400);
+    }
+
+    final clienteNome = (body['cliente_nome'] as String).trim();
+    final descricao = (body['descricao'] as String).trim();
+    final valor = (body['valor'] as num).toDouble();
+
     String? clienteId = body['cliente_id'] as String?;
-
-    // Se veio cliente_nome mas não id, tentar casar com clientes existentes.
-    // Só vincula automaticamente se houver UM único match — senão deixa
-    // cliente_id null pra não associar ao cliente errado.
     if (clienteId == null && clienteNome.isNotEmpty) {
       final m = db.raw.select(
         'SELECT id FROM clientes WHERE lower(nome) = lower(?) LIMIT 2',
@@ -119,133 +126,120 @@ Router pedidosRouter(Db db) {
     }
 
     final id = uuid.v4();
-    final lote = db.proximoLote();
-    final now = DateTime.now().toIso8601String();
-
+    final now = DateTime.now().toUtc().toIso8601String();
     final urgente = (body['urgente'] == true) ? 1 : 0;
+    final agendamentoFixo = (body['agendamento_fixo'] == true) ? 1 : 0;
 
-    // Verificar se cliente tem ciclo de fechamento aberto
-    String? fechamentoId;
-    if (clienteId != null) {
-      final fechRows = db.raw.select(
-        "SELECT id FROM cliente_fechamentos WHERE cliente_id = ? AND status IN ('aberto', 'estendido') ORDER BY numero DESC LIMIT 1",
-        [clienteId],
-      );
-      if (fechRows.isNotEmpty) {
-        fechamentoId = fechRows.first['id'] as String;
+    final Map<String, dynamic> pedido;
+    try {
+      pedido = db.transaction(() {
+      final lote = db.proximoLote();
+
+      String? fechamentoId;
+      if (clienteId != null) {
+        final fechRows = db.raw.select(
+          "SELECT id FROM cliente_fechamentos WHERE cliente_id = ? AND status IN ('aberto', 'estendido') ORDER BY numero DESC LIMIT 1",
+          [clienteId],
+        );
+        if (fechRows.isNotEmpty) fechamentoId = fechRows.first['id'] as String;
       }
-    }
 
-    db.raw.execute('''
-      INSERT INTO pedidos (
-        id, lote, cliente_id, cliente_nome, cliente_telefone, cliente_email,
-        descricao, peca, tecnica, quantidade, valor,
-        cor_peca, tamanho_peca, tecido,
-        arte_cores, arte_tamanho_cm, arte_posicao, arte_observacao,
-        data_chegada, data_producao, prazo_dias, agendamento_fixo,
-        forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por,
-        forma_pagamento, valor_pago, sinal_pago, status_pagamento,
-        status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em
-      ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?,?,?)
-    ''', [
-      id,
-      lote,
-      clienteId,
-      clienteNome,
-      body['cliente_telefone'],
-      body['cliente_email'],
-      descricao,
-      body['peca'],
-      body['tecnica'],
-      body['quantidade'],
-      valor,
-      body['cor_peca'],
-      body['tamanho_peca'],
-      body['tecido'],
-      body['arte_cores'],
-      body['arte_tamanho_cm'],
-      body['arte_posicao'],
-      body['arte_observacao'],
-      body['data_chegada'],
-      body['data_producao'],
-      body['prazo_dias'],
-      (body['agendamento_fixo'] == true) ? 1 : 0,
-      body['forma_entrega'],
-      body['endereco_entrega'],
-      body['data_entrega_combinada'],
-      body['entregue_em'],
-      body['entregue_por'],
-      body['forma_pagamento'],
-      (body['valor_pago'] as num?)?.toDouble() ?? 0,
-      (body['sinal_pago'] as num?)?.toDouble() ?? 0,
-      body['status_pagamento'] ?? 'devendo',
-      body['status'] ?? 'pendente',
-      urgente,
-      body['observacao'],
-      body['regiao'],
-      body['tipo_peca'],
-      fechamentoId,
-      now,
-      now,
-    ]);
-
-    // Atualizar agregados do fechamento se pedido foi associado
-    if (fechamentoId != null) {
-      final agg = db.raw.select(
-        'SELECT COUNT(*) as total, COALESCE(SUM(valor), 0) as vt, COALESCE(SUM(valor_pago), 0) as vp '
-        'FROM pedidos WHERE fechamento_id = ?',
-        [fechamentoId],
-      ).first;
       db.raw.execute('''
-        UPDATE cliente_fechamentos
-        SET total_pedidos = ?, valor_total = ?, valor_pago = ?, atualizado_em = ?
-        WHERE id = ?
+        INSERT INTO pedidos (
+          id, lote, cliente_id, cliente_nome, cliente_telefone, cliente_email,
+          descricao, peca, tecnica, quantidade, valor,
+          cor_peca, tamanho_peca, tecido,
+          arte_cores, arte_tamanho_cm, arte_posicao, arte_observacao,
+          data_chegada, data_producao, prazo_dias, agendamento_fixo,
+          forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por,
+          forma_pagamento, valor_pago, sinal_pago, status_pagamento,
+          status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em
+        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?,?,?)
       ''', [
-        agg['total'] as int,
-        (agg['vt'] as num).toDouble(),
-        (agg['vp'] as num).toDouble(),
-        now,
+        id,
+        lote,
+        clienteId,
+        clienteNome,
+        body['cliente_telefone'],
+        body['cliente_email'],
+        descricao,
+        body['peca'],
+        body['tecnica'],
+        body['quantidade'],
+        valor,
+        body['cor_peca'],
+        body['tamanho_peca'],
+        body['tecido'],
+        body['arte_cores'],
+        body['arte_tamanho_cm'],
+        body['arte_posicao'],
+        body['arte_observacao'],
+        body['data_chegada'],
+        body['data_producao'],
+        body['prazo_dias'],
+        agendamentoFixo,
+        body['forma_entrega'],
+        body['endereco_entrega'],
+        body['data_entrega_combinada'],
+        body['entregue_em'],
+        body['entregue_por'],
+        body['forma_pagamento'],
+        0, // valor_pago — só muda via /pagamentos (C-03)
+        (body['sinal_pago'] as num?)?.toDouble() ?? 0,
+        body['status_pagamento'] ?? 'devendo',
+        body['status'] ?? 'pendente',
+        urgente,
+        body['observacao'],
+        body['regiao'],
+        body['tipo_peca'],
         fechamentoId,
+        now,
+        now,
       ]);
-    }
 
-    // Se o cliente enviou valor_pago inicial, reconciliar status_pagamento.
-    if (body['valor_pago'] != null || body['status_pagamento'] != null) {
-      recalcularPagamento(db.raw, id);
-    }
-
-    // Se auto_agendar foi pedido ou data_producao não foi passada
-    if (body['auto_agendar'] == true || body['data_producao'] == null) {
-      try {
-        final dataChegada = body['data_chegada'] is String
-            ? DateTime.tryParse(body['data_chegada'] as String)
-            : null;
-        final inicio = agendador.agendar(
-          pedidoId: id,
-          valor: valor,
-          dataChegada: dataChegada,
-        );
-        final prazoDias = dataChegada != null
-            ? agendador.calcularPrazoDias(dataChegada, inicio)
-            : null;
-        db.raw.execute(
-          'UPDATE pedidos SET data_producao=?, prazo_dias=?, status=CASE WHEN status=? THEN ? ELSE status END WHERE id=?',
-          [
-            _formatarData(inicio),
-            prazoDias,
-            'pendente',
-            'agendado',
-            id,
-          ],
-        );
-      } catch (e) {
-        // não bloqueia — pedido fica sem data_producao
-        print('[agendar] $e');
+      if (fechamentoId != null) {
+        _atualizarAgregadoFechamento(db, fechamentoId, now);
       }
+
+      // Recalcula status_pagamento (vai virar 'devendo' já que valor_pago=0).
+      recalcularPagamento(db.raw, id);
+
+      // Agendamento, ainda dentro da transação — qualquer erro reverte o INSERT.
+      if (body['auto_agendar'] == true || body['data_producao'] == null) {
+        try {
+          final dataChegada = body['data_chegada'] is String
+              ? DateTime.tryParse(body['data_chegada'] as String)
+              : null;
+          final inicio = agendador.agendar(
+            pedidoId: id,
+            valor: valor,
+            dataChegada: dataChegada,
+          );
+          final prazoDias = dataChegada != null
+              ? agendador.calcularPrazoDias(dataChegada, inicio)
+              : null;
+          db.raw.execute(
+            'UPDATE pedidos SET data_producao=?, prazo_dias=?, '
+            "status=CASE WHEN status='pendente' THEN 'agendado' ELSE status END "
+            'WHERE id=?',
+            [_formatarData(inicio), prazoDias, id],
+          );
+        } on AgendadorCapacidadeException catch (e) {
+          // Capacidade insuficiente é erro de regra de negócio — sobe pra 400.
+          throw _BadRequest(e.message);
+        }
+      }
+
+      return db.raw
+          .select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [id]).first;
+      });
+    } on _BadRequest catch (e) {
+      return json({'error': e.message}, status: 400);
+    } on AgendadorCapacidadeException catch (e) {
+      return json({'error': e.message}, status: 400);
     }
 
-    final created = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]).first;
-    return json(Pedido.fromRow(created).toJson(), status: 201);
+    return json(Pedido.fromRow(pedido).toJson(), status: 201);
   });
 
   // ── Atualizar ──────────────────────────────────────────────────────────
@@ -253,8 +247,17 @@ Router pedidosRouter(Db db) {
     final exists = db.raw.select('SELECT id FROM pedidos WHERE id = ?', [id]);
     if (exists.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
 
-    final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    final Map<String, dynamic> body;
+    try {
+      body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return json({'error': 'body inválido'}, status: 400);
+    }
 
+    final erro = validarPedido(body, criar: false);
+    if (erro != null) return json({'error': erro}, status: 400);
+
+    // Campos editáveis — valor_pago removido (C-03); só muda via /pagamentos.
     const editaveis = {
       'cliente_id', 'cliente_nome', 'cliente_telefone', 'cliente_email',
       'descricao', 'peca', 'tecnica', 'quantidade', 'valor',
@@ -262,7 +265,7 @@ Router pedidosRouter(Db db) {
       'arte_cores', 'arte_tamanho_cm', 'arte_posicao', 'arte_observacao',
       'data_chegada', 'data_producao', 'prazo_dias', 'agendamento_fixo',
       'forma_entrega', 'endereco_entrega', 'data_entrega_combinada', 'entregue_em', 'entregue_por',
-      'forma_pagamento', 'valor_pago', 'sinal_pago', 'status_pagamento',
+      'forma_pagamento', 'sinal_pago', 'status_pagamento',
       'status', 'urgente', 'observacao', 'regiao', 'tipo_peca', 'fechamento_id',
     };
 
@@ -271,42 +274,70 @@ Router pedidosRouter(Db db) {
     for (final campo in editaveis) {
       if (!body.containsKey(campo)) continue;
       var valor = body[campo];
-      if (campo == 'urgente' || campo == 'agendamento_fixo') valor = (valor == true) ? 1 : 0;
-      if ((campo == 'valor' || campo == 'valor_pago' || campo == 'sinal_pago') && valor is num) {
+      if (campo == 'urgente' || campo == 'agendamento_fixo') {
+        valor = (valor == true) ? 1 : 0;
+      }
+      if ((campo == 'valor' || campo == 'sinal_pago') && valor is num) {
         valor = valor.toDouble();
       }
       sets.add('$campo = ?');
       args.add(valor);
     }
 
-    if (sets.isNotEmpty) {
-      sets.add('atualizado_em = ?');
-      args.add(DateTime.now().toIso8601String());
-      args.add(id);
-      db.raw.execute('UPDATE pedidos SET ${sets.join(', ')} WHERE id = ?', args);
-    }
+    db.transaction(() {
+      if (sets.isNotEmpty) {
+        sets.add('atualizado_em = ?');
+        args.add(DateTime.now().toUtc().toIso8601String());
+        args.add(id);
+        db.raw.execute('UPDATE pedidos SET ${sets.join(', ')} WHERE id = ?', args);
+      }
+      if (body.containsKey('valor')) {
+        recalcularPagamento(db.raw, id);
+      }
+      // Reflete agregado caso valor tenha mudado e o pedido pertença a fechamento.
+      final fech = db.raw.select(
+        'SELECT fechamento_id FROM pedidos WHERE id = ?',
+        [id],
+      ).first;
+      final fechamentoId = fech['fechamento_id'] as String?;
+      if (fechamentoId != null && body.containsKey('valor')) {
+        _atualizarAgregadoFechamento(
+          db,
+          fechamentoId,
+          DateTime.now().toUtc().toIso8601String(),
+        );
+      }
+    });
 
-    // Se o valor (ou valor_pago via body) mudou, reconciliar status_pagamento
-    // com o total de pagamentos registrados.
-    if (body.containsKey('valor') || body.containsKey('valor_pago')) {
-      recalcularPagamento(db.raw, id);
-    }
-
-    final updated = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]).first;
+    final updated = db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [id]).first;
     return json(Pedido.fromRow(updated).toJson());
   });
 
   // ── Deletar ────────────────────────────────────────────────────────────
   r.delete('/<id>', (Request req, String id) {
-    final exists = db.raw.select('SELECT id FROM pedidos WHERE id = ?', [id]);
+    final exists = db.raw.select(
+      'SELECT id, fechamento_id FROM pedidos WHERE id = ?',
+      [id],
+    );
     if (exists.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
-    db.raw.execute('DELETE FROM pedidos WHERE id = ?', [id]);
+    final fechamentoId = exists.first['fechamento_id'] as String?;
+
+    db.transaction(() {
+      db.raw.execute('DELETE FROM pedidos WHERE id = ?', [id]);
+      if (fechamentoId != null) {
+        _atualizarAgregadoFechamento(
+          db,
+          fechamentoId,
+          DateTime.now().toUtc().toIso8601String(),
+        );
+      }
+    });
     return json({'ok': true});
   });
 
   // ── Agendar automaticamente ───────────────────────────────────────────
   r.post('/<id>/agendar', (Request req, String id) async {
-    final rows = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]);
+    final rows = db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [id]);
     if (rows.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
     final p = Pedido.fromRow(rows.first);
     if (p.status == 'entregue' || p.entregueEm != null) {
@@ -315,29 +346,37 @@ Router pedidosRouter(Db db) {
     if (p.valor <= 0) {
       return json({'error': 'pedido sem valor — não pode agendar'}, status: 400);
     }
+    // A-03: se está fixado, não reagendar — mantém data atual.
+    if (p.agendamentoFixo) {
+      return json({
+        'error': 'pedido tem agendamento fixo — desmarque antes de reagendar',
+      }, status: 409);
+    }
+
+    final dc = p.dataChegada != null ? DateTime.tryParse(p.dataChegada!) : null;
     try {
-      final dc = p.dataChegada != null ? DateTime.tryParse(p.dataChegada!) : null;
-      final inicio = agendador.agendar(
-        pedidoId: id,
-        valor: p.valor,
-        dataChegada: dc,
-      );
-      final prazo = dc != null ? agendador.calcularPrazoDias(dc, inicio) : null;
-      db.raw.execute(
-        'UPDATE pedidos SET data_producao=?, prazo_dias=?, status=CASE WHEN status=? THEN ? ELSE status END, atualizado_em=? WHERE id=?',
-        [
-          _formatarData(inicio),
-          prazo,
-          'pendente',
-          'agendado',
-          DateTime.now().toIso8601String(),
-          id,
-        ],
-      );
-      final updated = db.raw.select('SELECT * FROM pedidos WHERE id=?', [id]).first;
+      final updated = db.transaction(() {
+        final inicio = agendador.agendar(pedidoId: id, valor: p.valor, dataChegada: dc);
+        final prazo = dc != null ? agendador.calcularPrazoDias(dc, inicio) : null;
+        db.raw.execute(
+          'UPDATE pedidos SET data_producao=?, prazo_dias=?, '
+          "status=CASE WHEN status='pendente' THEN 'agendado' ELSE status END, "
+          'atualizado_em=? WHERE id=?',
+          [
+            _formatarData(inicio),
+            prazo,
+            DateTime.now().toUtc().toIso8601String(),
+            id,
+          ],
+        );
+        return db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id=?', [id]).first;
+      });
       return json(Pedido.fromRow(updated).toJson());
-    } catch (e) {
-      return json({'error': 'agendamento falhou: $e'}, status: 500);
+    } on AgendadorCapacidadeException catch (e) {
+      return json({'error': e.message}, status: 400);
+    } catch (e, st) {
+      agendaLog.severe('agendamento falhou pedido=$id', e, st);
+      return json({'error': 'agendamento falhou'}, status: 500);
     }
   });
 
@@ -349,126 +388,133 @@ Router pedidosRouter(Db db) {
         : jsonDecode(raw) as Map<String, dynamic>;
     final porQuem = body['entregue_por'] as String?;
 
-    final rows = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]);
+    final rows = db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [id]);
     if (rows.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
     final p = Pedido.fromRow(rows.first);
     if (p.status == 'entregue' || p.entregueEm != null) {
       return json({'error': 'pedido já foi entregue'}, status: 400);
     }
 
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     db.raw.execute(
       'UPDATE pedidos SET entregue_em=?, entregue_por=?, status=?, atualizado_em=? WHERE id=?',
       [now, porQuem, 'entregue', now, id],
     );
-    final updated = db.raw.select('SELECT * FROM pedidos WHERE id=?', [id]).first;
+    final updated = db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id=?', [id]).first;
     return json(Pedido.fromRow(updated).toJson());
   });
 
   // ── Duplicar ───────────────────────────────────────────────────────────
   r.post('/<id>/duplicar', (Request req, String id) async {
-    final rows = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [id]);
+    final rows = db.raw.select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [id]);
     if (rows.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
     final orig = Pedido.fromRow(rows.first);
 
-    final novoId = uuid.v4();
-    final novoLote = db.proximoLote();
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final created = db.transaction(() {
+      final novoId = uuid.v4();
+      final novoLote = db.proximoLote();
 
-    // Verificar se cliente tem ciclo de fechamento aberto para o pedido duplicado
-    String? novoFechamentoId;
-    if (orig.clienteId != null) {
-      final fechRows = db.raw.select(
-        "SELECT id FROM cliente_fechamentos WHERE cliente_id = ? AND status IN ('aberto', 'estendido') ORDER BY numero DESC LIMIT 1",
-        [orig.clienteId],
-      );
-      if (fechRows.isNotEmpty) {
-        novoFechamentoId = fechRows.first['id'] as String;
+      String? novoFechamentoId;
+      if (orig.clienteId != null) {
+        final fechRows = db.raw.select(
+          "SELECT id FROM cliente_fechamentos WHERE cliente_id = ? AND status IN ('aberto', 'estendido') ORDER BY numero DESC LIMIT 1",
+          [orig.clienteId],
+        );
+        if (fechRows.isNotEmpty) {
+          novoFechamentoId = fechRows.first['id'] as String;
+        }
       }
-    }
 
-    db.raw.execute('''
-      INSERT INTO pedidos (
-        id, lote, cliente_id, cliente_nome, cliente_telefone, cliente_email,
-        descricao, peca, tecnica, quantidade, valor,
-        cor_peca, tamanho_peca, tecido,
-        arte_cores, arte_tamanho_cm, arte_posicao, arte_observacao,
-        data_chegada, data_producao, prazo_dias, agendamento_fixo,
-        forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por,
-        forma_pagamento, valor_pago, sinal_pago, status_pagamento,
-        status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em
-      ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?,?,?)
-    ''', [
-      novoId,
-      novoLote,
-      orig.clienteId,
-      orig.clienteNome,
-      orig.clienteTelefone,
-      orig.clienteEmail,
-      orig.descricao,
-      orig.peca,
-      orig.tecnica,
-      orig.quantidade,
-      orig.valor,
-      orig.corPeca,
-      orig.tamanhoPeca,
-      orig.tecido,
-      orig.arteCores,
-      orig.arteTamanhoCm,
-      orig.artePosicao,
-      orig.arteObservacao,
-      null, // data_chegada
-      null, // data_producao
-      null, // prazo_dias
-      0,
-      orig.formaEntrega,
-      orig.enderecoEntrega,
-      null, // data_entrega_combinada
-      null, // entregue_em
-      null, // entregue_por
-      orig.formaPagamento,
-      0, // valor_pago
-      0, // sinal_pago
-      'devendo',
-      'pendente',
-      orig.urgente ? 1 : 0,
-      orig.observacao,
-      orig.regiao,
-      orig.tipoPeca,
-      novoFechamentoId,
-      now,
-      now,
-    ]);
-
-    // Atualizar agregados do fechamento se o novo pedido foi associado.
-    if (novoFechamentoId != null) {
-      final agg = db.raw.select(
-        'SELECT COUNT(*) as total, COALESCE(SUM(valor), 0) as vt, COALESCE(SUM(valor_pago), 0) as vp '
-        'FROM pedidos WHERE fechamento_id = ?',
-        [novoFechamentoId],
-      ).first;
       db.raw.execute('''
-        UPDATE cliente_fechamentos
-        SET total_pedidos = ?, valor_total = ?, valor_pago = ?, atualizado_em = ?
-        WHERE id = ?
+        INSERT INTO pedidos (
+          id, lote, cliente_id, cliente_nome, cliente_telefone, cliente_email,
+          descricao, peca, tecnica, quantidade, valor,
+          cor_peca, tamanho_peca, tecido,
+          arte_cores, arte_tamanho_cm, arte_posicao, arte_observacao,
+          data_chegada, data_producao, prazo_dias, agendamento_fixo,
+          forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por,
+          forma_pagamento, valor_pago, sinal_pago, status_pagamento,
+          status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em
+        ) VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?,?,?)
       ''', [
-        agg['total'] as int,
-        (agg['vt'] as num).toDouble(),
-        (agg['vp'] as num).toDouble(),
-        now,
+        novoId,
+        novoLote,
+        orig.clienteId,
+        orig.clienteNome,
+        orig.clienteTelefone,
+        orig.clienteEmail,
+        orig.descricao,
+        orig.peca,
+        orig.tecnica,
+        orig.quantidade,
+        orig.valor,
+        orig.corPeca,
+        orig.tamanhoPeca,
+        orig.tecido,
+        orig.arteCores,
+        orig.arteTamanhoCm,
+        orig.artePosicao,
+        orig.arteObservacao,
+        null, null, null, 0,
+        orig.formaEntrega,
+        orig.enderecoEntrega,
+        null, null, null,
+        orig.formaPagamento,
+        0, 0, 'devendo',
+        'pendente',
+        orig.urgente ? 1 : 0,
+        orig.observacao,
+        orig.regiao,
+        orig.tipoPeca,
         novoFechamentoId,
+        now,
+        now,
       ]);
-    }
 
-    final created = db.raw.select('SELECT * FROM pedidos WHERE id = ?', [novoId]).first;
+      if (novoFechamentoId != null) {
+        _atualizarAgregadoFechamento(db, novoFechamentoId, now);
+      }
+
+      return db.raw
+          .select('SELECT $_pedidoCols FROM pedidos WHERE id = ?', [novoId]).first;
+    });
+
     return json(Pedido.fromRow(created).toJson(), status: 201);
   });
 
   return r;
 }
 
+void _atualizarAgregadoFechamento(Db db, String fechamentoId, String nowIso) {
+  final agg = db.raw.select(
+    'SELECT COUNT(*) AS total, COALESCE(SUM(valor), 0) AS vt, COALESCE(SUM(valor_pago), 0) AS vp '
+    'FROM pedidos WHERE fechamento_id = ?',
+    [fechamentoId],
+  ).first;
+  db.raw.execute('''
+    UPDATE cliente_fechamentos
+    SET total_pedidos = ?, valor_total = ?, valor_pago = ?, atualizado_em = ?
+    WHERE id = ?
+  ''', [
+    agg['total'] as int,
+    (agg['vt'] as num).toDouble(),
+    (agg['vp'] as num).toDouble(),
+    nowIso,
+    fechamentoId,
+  ]);
+}
+
 String _formatarData(DateTime d) {
   return '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+}
+
+/// Erro lançado dentro da transação pra disparar rollback + retorno 400.
+class _BadRequest implements Exception {
+  final String message;
+  _BadRequest(this.message);
+  @override
+  String toString() => message;
 }

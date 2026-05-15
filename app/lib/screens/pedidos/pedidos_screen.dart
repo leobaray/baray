@@ -3,11 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../models/pedido.dart';
 import '../../state/pedidos_provider.dart';
+import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/list_skeleton.dart';
 import '../../widgets/pedido_form_sheet.dart';
 import '../../widgets/pedido_row.dart';
 import '../kanban/kanban_screen.dart';
@@ -105,9 +106,9 @@ class _PedidosScreenState extends ConsumerState<PedidosScreen> {
                 : _ViewMode.lista),
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-            onPressed: () => ref.invalidate(pedidosProvider),
+            icon: const Icon(Icons.calculate_outlined),
+            tooltip: 'Orçamento rápido',
+            onPressed: () => context.push('/orcamento'),
           ),
         ],
       ),
@@ -198,16 +199,16 @@ class _FiltrosHeader extends ConsumerWidget {
       controller: buscaCtl,
       focusNode: buscaFocus,
       decoration: InputDecoration(
-        hintText: 'Buscar por cliente, descrição, lote...',
+        labelText: 'Buscar',
+        hintText: 'cliente, descrição ou lote',
         prefixIcon: const Icon(Icons.search, size: 18),
         isDense: true,
         suffixIcon: buscaCtl.text.isNotEmpty
             ? IconButton(
-                icon: const Icon(Icons.close, size: 16),
+                icon: const Icon(Icons.close, size: 18),
                 onPressed: onLimparBusca,
-                visualDensity: VisualDensity.compact,
-                splashRadius: 16,
                 tooltip: 'Limpar',
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               )
             : null,
       ),
@@ -387,7 +388,7 @@ class _ListaView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const ListSkeleton(itemHeight: 64),
       error: (e, _) => ErrorState(
         message: e.toString(),
         onRetry: () => ref.invalidate(pedidosProvider),
@@ -443,7 +444,7 @@ class _ListaView extends ConsumerWidget {
       itemCount: lista.length,
       itemBuilder: (_, i) => PedidoCardMobile(
         pedido: lista[i],
-        onTap: () => context.push('/pedidos/${lista[i].id}'),
+        onTap: () => context.push('/pedidos/${lista[i].id}?from=pedidos'),
         zebra: i.isOdd,
       ),
     );
@@ -469,7 +470,7 @@ class _ListaView extends ConsumerWidget {
                   itemCount: lista.length,
                   itemBuilder: (_, i) => PedidoRow(
                     pedido: lista[i],
-                    onTap: () => context.push('/pedidos/${lista[i].id}'),
+                    onTap: () => context.push('/pedidos/${lista[i].id}?from=pedidos'),
                     zebra: i.isOdd,
                   ),
                 ),
@@ -490,7 +491,7 @@ class _ResumoBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
 
     final total = pedidos.fold<double>(0, (s, p) => s + p.valor);
     final devendo = pedidos
@@ -498,43 +499,55 @@ class _ResumoBanner extends StatelessWidget {
         .fold<double>(0, (s, p) => s + p.valorRestante);
     final urgentes = pedidos.where((p) => p.urgente).length;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLowest,
-        border: Border(bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
-      child: Row(
-        children: [
-          _Metric(
-            label: 'pedidos',
-            valor: '${pedidos.length}',
-            color: cs.onSurface,
-          ),
-          const SizedBox(width: 16),
-          _Metric(
-            label: 'total',
-            valor: moeda.format(total),
-            color: cs.onSurface,
-          ),
-          if (devendo > 0.01) ...[
+    final resumoTexto = [
+      '${pedidos.length} pedidos',
+      'total ${moeda.format(total)}',
+      if (devendo > 0.01) 'devendo ${moeda.format(devendo)}',
+      if (urgentes > 0) '$urgentes urgentes',
+    ].join(', ');
+
+    return Semantics(
+      liveRegion: true,
+      label: 'Resumo: $resumoTexto',
+      container: true,
+      child: Container(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          border: Border(bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
+        ),
+        padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
+        child: Row(
+          children: [
+            _Metric(
+              label: 'pedidos',
+              valor: '${pedidos.length}',
+              color: cs.onSurface,
+            ),
             const SizedBox(width: 16),
             _Metric(
-              label: 'devendo',
-              valor: moeda.format(devendo),
-              color: cs.error,
+              label: 'total',
+              valor: moeda.format(total),
+              color: cs.onSurface,
             ),
+            if (devendo > 0.01) ...[
+              const SizedBox(width: 16),
+              _Metric(
+                label: 'devendo',
+                valor: moeda.format(devendo),
+                color: cs.error,
+              ),
+            ],
+            if (urgentes > 0) ...[
+              const SizedBox(width: 16),
+              _Metric(
+                label: 'urgentes',
+                valor: '$urgentes',
+                color: cs.tertiary,
+                icon: Icons.local_fire_department,
+              ),
+            ],
           ],
-          if (urgentes > 0) ...[
-            const SizedBox(width: 16),
-            _Metric(
-              label: 'urgentes',
-              valor: '$urgentes',
-              color: cs.tertiary,
-              icon: Icons.local_fire_department,
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -577,7 +590,7 @@ class _Metric extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             color: cs.onSurfaceVariant,
             letterSpacing: 0.3,

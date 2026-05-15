@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'api/api_client.dart';
@@ -10,14 +11,19 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Inter está bundlada como asset (ver pubspec.yaml). Desligar o fetch em
+  // runtime evita FOUT no primeiro launch e faz o app funcionar offline.
+  GoogleFonts.config.allowRuntimeFetching = false;
   await initializeDateFormatting('pt_BR', null);
   final url = await loadServerUrl();
+  final token = await loadApiToken();
   final themeMode = await loadThemeMode();
 
   runApp(
     ProviderScope(
       overrides: [
         serverUrlProvider.overrideWith((ref) => url),
+        apiTokenProvider.overrideWith((ref) => token),
         themeModeProvider.overrideWith((ref) => themeMode),
       ],
       child: const EmpresaApp(),

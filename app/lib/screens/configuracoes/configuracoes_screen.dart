@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../api/api_client.dart';
 import '../../models/configuracao.dart';
 import '../../state/configuracoes_provider.dart';
 import '../../state/pedidos_provider.dart';
 import '../../state/theme_provider.dart';
+import '../../theme/spacing.dart';
+import '../../util/formatters.dart';
 
 // Versão do app — atualizar quando bumpar `version:` no pubspec.yaml.
 const _appVersao = '1.0.0';
@@ -39,6 +40,8 @@ class ConfiguracoesScreen extends ConsumerStatefulWidget {
 
 class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
   final _serverUrlCtl = TextEditingController();
+  final _apiTokenCtl = TextEditingController();
+  bool _mostrarToken = false;
   bool _testando = false;
   ServerHealth? _status;
   int? _proximoLote;
@@ -47,17 +50,22 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
   void initState() {
     super.initState();
     _serverUrlCtl.text = ref.read(serverUrlProvider);
+    _apiTokenCtl.text = ref.read(apiTokenProvider);
     _atualizarDiagnostico();
   }
 
   @override
   void dispose() {
     _serverUrlCtl.dispose();
+    _apiTokenCtl.dispose();
     super.dispose();
   }
 
   Future<void> _atualizarDiagnostico() async {
-    final api = ApiClient(ref.read(serverUrlProvider));
+    final api = ApiClient(
+      ref.read(serverUrlProvider),
+      apiToken: ref.read(apiTokenProvider),
+    );
     final info = await api.healthInfo();
     if (!mounted) return;
     setState(() => _status = info);
@@ -68,49 +76,73 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
     }
   }
 
+  /// Testa a URL nova primeiro; só salva se o servidor respondeu.
+  /// Evita gravar uma URL quebrada — UX antiga deixava o usuário salvar antes
+  /// de saber se o endereço respondia.
   Future<void> _salvarUrl() async {
     final nova = _serverUrlCtl.text.trim();
     if (nova.isEmpty) return;
-    await saveServerUrl(nova);
-    ref.read(serverUrlProvider.notifier).state = nova;
-    ref.invalidate(configuracoesProvider);
-    ref.invalidate(pedidosProvider);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Servidor atualizado'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-    await _atualizarDiagnostico();
-  }
-
-  Future<void> _testarConexao() async {
     setState(() => _testando = true);
     final messenger = ScaffoldMessenger.of(context);
     final scheme = Theme.of(context).colorScheme;
     try {
-      final api = ApiClient(_serverUrlCtl.text.trim());
+      final api = ApiClient(nova, apiToken: _apiTokenCtl.text.trim());
       final info = await api.healthInfo();
       if (!mounted) return;
-      final ok = info.online;
+      if (!info.online) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Sem resposta de $nova — URL não foi salva',
+              style: TextStyle(color: scheme.onError),
+            ),
+            backgroundColor: scheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      await saveServerUrl(nova);
+      ref.read(serverUrlProvider.notifier).state = nova;
+      ref.invalidate(configuracoesProvider);
+      ref.invalidate(pedidosProvider);
+      if (!mounted) return;
+      setState(() => _status = info);
+      final prox = await api.proximoLote();
+      if (!mounted) return;
+      setState(() => _proximoLote = prox);
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            ok ? 'Conectado · ${info.latenciaMs}ms' : 'Sem resposta do servidor',
-            style: TextStyle(color: ok ? scheme.onPrimary : scheme.onError),
+            'Conectado · ${info.latenciaMs}ms · URL salva',
+            style: TextStyle(color: scheme.onPrimary),
           ),
-          backgroundColor: ok ? scheme.primary : scheme.error,
+          backgroundColor: scheme.primary,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 3),
         ),
       );
-      setState(() => _status = info);
     } finally {
       if (mounted) setState(() => _testando = false);
     }
+  }
+
+  Future<void> _salvarToken() async {
+    final novo = _apiTokenCtl.text.trim();
+    await saveApiToken(novo);
+    ref.read(apiTokenProvider.notifier).state = novo;
+    ref.invalidate(configuracoesProvider);
+    ref.invalidate(pedidosProvider);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(novo.isEmpty ? 'Token removido' : 'Token salvo'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+    await _atualizarDiagnostico();
   }
 
   @override
@@ -465,34 +497,61 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _testando ? null : _testarConexao,
-                    icon: _testando
-                        ? const SizedBox(
-                            height: 14,
-                            width: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.wifi_tethering, size: 16),
-                    label: const Text('Testar', style: TextStyle(fontSize: 12.5)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      visualDensity: VisualDensity.compact,
-                    ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: _testando ? null : _salvarUrl,
+                  icon: _testando
+                      ? const SizedBox(
+                          height: 14,
+                          width: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.wifi_tethering, size: 16),
+                  label: Text(
+                    _testando ? 'Testando…' : 'Salvar e conectar',
+                    style: const TextStyle(fontSize: 12.5),
                   ),
-                  const Spacer(),
-                  FilledButton.icon(
-                    onPressed: _salvarUrl,
-                    icon: const Icon(Icons.save_outlined, size: 16),
-                    label: const Text('Salvar URL', style: TextStyle(fontSize: 12.5)),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      visualDensity: VisualDensity.compact,
-                    ),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    visualDensity: VisualDensity.compact,
                   ),
-                ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _apiTokenCtl,
+                obscureText: !_mostrarToken,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: 'Token de acesso (X-API-Key)',
+                  hintText: 'cole o token gerado pelo servidor',
+                  helperText: 'Salvo localmente; sem isso requests retornam 401',
+                  prefixIcon: const Icon(Icons.key_outlined, size: 18),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: Icon(_mostrarToken ? Icons.visibility_off : Icons.visibility, size: 16),
+                    onPressed: () => setState(() => _mostrarToken = !_mostrarToken),
+                    visualDensity: VisualDensity.compact,
+                    splashRadius: 16,
+                    tooltip: _mostrarToken ? 'Ocultar' : 'Mostrar',
+                  ),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: _salvarToken,
+                  icon: const Icon(Icons.save_outlined, size: 16),
+                  label: const Text('Salvar token', style: TextStyle(fontSize: 12.5)),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
               ),
             ],
           ),
@@ -615,7 +674,7 @@ class _ConfiguracoesScreenState extends ConsumerState<ConfiguracoesScreen> {
   String? _previewPct(String valorStr, String tipo) {
     final pct = int.tryParse(valorStr);
     if (pct == null || pct == 0) return null;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final base = 1000.0;
     final resultado = base * (1 + pct / 100);
     final prefixo = switch (tipo) {
@@ -668,7 +727,7 @@ class _StatusCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
       ),
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      padding: const EdgeInsets.all(AppSpacing.padMd),
       child: Row(
         children: [
           Container(
@@ -741,7 +800,12 @@ class _Secao extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(18, 16, 18, descricao == null ? 12 : 14),
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.padMd,
+              AppSpacing.padMd,
+              AppSpacing.padMd,
+              descricao == null ? AppSpacing.gapMd : AppSpacing.gapMd + 2,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -770,7 +834,7 @@ class _Secao extends StatelessWidget {
           ),
           if (warning != null)
             Container(
-              margin: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              margin: const EdgeInsets.fromLTRB(AppSpacing.padMd, 0, AppSpacing.padMd, AppSpacing.gapSm),
               padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
               decoration: BoxDecoration(
                 color: cs.errorContainer.withValues(alpha: 0.4),
@@ -798,7 +862,7 @@ class _Secao extends StatelessWidget {
             ),
           Container(height: 1, color: cs.outlineVariant.withValues(alpha: 0.4)),
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.padMd, 4, AppSpacing.padMd, AppSpacing.gapMd - 2),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -889,7 +953,7 @@ class _LinhaConfig extends StatelessWidget {
                             borderRadius: BorderRadius.circular(999),
                             child: Padding(
                               padding: const EdgeInsets.all(3),
-                              child: Icon(Icons.restart_alt, size: 13, color: cs.outline),
+                              child: Icon(Icons.restart_alt, size: 13, color: cs.onSurfaceVariant),
                             ),
                           ),
                         ),
@@ -1179,9 +1243,10 @@ class _StepBtn extends StatelessWidget {
       onTap: onTap,
       borderRadius: raio,
       child: SizedBox(
-        width: 34,
-        height: 40,
-        child: Icon(icon, size: 16, color: cs.onSurfaceVariant),
+        // WCAG 2.5.5 (AAA): 44x44 mínimo p/ tap targets. Antes: 34x40.
+        width: 44,
+        height: 44,
+        child: Icon(icon, size: 18, color: cs.onSurfaceVariant),
       ),
     );
   }

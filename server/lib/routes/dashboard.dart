@@ -3,9 +3,19 @@ import 'dart:convert';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../agendador.dart';
 import '../db.dart';
 import '../models/pedido.dart';
-import '../agendador.dart';
+
+const String _pedidoCols =
+    'id, lote, cliente_id, cliente_nome, cliente_telefone, cliente_email, '
+    'descricao, peca, tecnica, quantidade, valor, '
+    'cor_peca, tamanho_peca, tecido, '
+    'arte_cores, arte_tamanho_cm, arte_posicao, arte_observacao, '
+    'data_chegada, data_producao, prazo_dias, agendamento_fixo, '
+    'forma_entrega, endereco_entrega, data_entrega_combinada, entregue_em, entregue_por, '
+    'forma_pagamento, valor_pago, sinal_pago, status_pagamento, '
+    'status, urgente, observacao, regiao, tipo_peca, fechamento_id, criado_em, atualizado_em';
 
 Router dashboardRouter(Db db) {
   final r = Router();
@@ -25,7 +35,6 @@ Router dashboardRouter(Db db) {
     final fimMes = DateTime(hoje.year, hoje.month + 1, 0);
     final fimMesStr = _dataStr(fimMes);
 
-    // Vendas do mês — total de pedidos criados (volume de negócio).
     final vendasRow = db.raw.select(
       'SELECT COALESCE(SUM(valor), 0) AS s, COUNT(*) AS n FROM pedidos WHERE criado_em >= ?',
       [inicioMesStr],
@@ -33,53 +42,55 @@ Router dashboardRouter(Db db) {
     final vendasMes = (vendasRow['s'] as num).toDouble();
     final pedidosMes = vendasRow['n'] as int;
 
-    // Recebido no mês — pagamentos efetivos registrados.
     final recebidoRow = db.raw.select(
       'SELECT COALESCE(SUM(valor), 0) AS s FROM pedido_pagamentos WHERE quando >= ?',
       [inicioMesStr],
     ).first;
     final recebidoMes = (recebidoRow['s'] as num).toDouble();
 
-    // Pedidos concluídos no mês (entregues com base em entregue_em).
     final concluidosRow = db.raw.select(
       'SELECT COUNT(*) AS n FROM pedidos WHERE entregue_em >= ?',
       [inicioMesStr],
     ).first;
     final concluidosMes = concluidosRow['n'] as int;
 
-    // Ticket médio do mês.
     final ticketMedio = pedidosMes > 0 ? vendasMes / pedidosMes : 0.0;
 
-    // A receber (saldo devedor agregado).
     final aReceberRow = db.raw.select(
       'SELECT COALESCE(SUM(valor - valor_pago), 0) AS s FROM pedidos '
       "WHERE status_pagamento != 'pago' AND status != 'entregue'",
     ).first;
 
-    // Em produção hoje.
     final emProducaoRows = db.raw.select(
-      'SELECT * FROM pedidos WHERE data_producao = ? ORDER BY lote',
+      'SELECT $_pedidoCols FROM pedidos WHERE data_producao = ? ORDER BY lote',
       [hojeStr],
     );
     final emProducao = emProducaoRows.map((r) => Pedido.fromRow(r).toJson()).toList();
 
-    // Urgentes abertos (urgente=1 e não entregue).
     final urgentesRows = db.raw.select(
-      "SELECT * FROM pedidos WHERE urgente = 1 AND status != 'entregue' ORDER BY lote DESC",
+      "SELECT $_pedidoCols FROM pedidos WHERE urgente = 1 AND status != 'entregue' ORDER BY lote DESC",
     );
     final urgentes = urgentesRows.map((r) => Pedido.fromRow(r).toJson()).toList();
 
-    // Prazos em atenção: pedido não entregue com data_entrega até 7 dias à frente.
+    // A-11: separar atrasados (data < hoje) de vencendo (hoje..hoje+7).
+    // Floor evita "vencendo" mostrar coisa de 2020.
     final em7dias = hoje.add(const Duration(days: 7));
-    final vencendoRows = db.raw.select(
-      'SELECT * FROM pedidos WHERE data_entrega_combinada IS NOT NULL '
-      "AND data_entrega_combinada <= ? AND status != 'entregue' "
+    final atrasadosRows = db.raw.select(
+      'SELECT $_pedidoCols FROM pedidos WHERE data_entrega_combinada IS NOT NULL '
+      "AND data_entrega_combinada < ? AND status != 'entregue' "
       'ORDER BY data_entrega_combinada ASC',
-      [_dataStr(em7dias)],
+      [hojeStr],
+    );
+    final atrasados = atrasadosRows.map((r) => Pedido.fromRow(r).toJson()).toList();
+
+    final vencendoRows = db.raw.select(
+      'SELECT $_pedidoCols FROM pedidos WHERE data_entrega_combinada IS NOT NULL '
+      "AND data_entrega_combinada >= ? AND data_entrega_combinada <= ? AND status != 'entregue' "
+      'ORDER BY data_entrega_combinada ASC',
+      [hojeStr, _dataStr(em7dias)],
     );
     final vencendo = vencendoRows.map((r) => Pedido.fromRow(r).toJson()).toList();
 
-    // Ocupação dos próximos 7 dias úteis.
     final ocupacao = agendador.proximosDias(7);
 
     return json({
@@ -91,6 +102,7 @@ Router dashboardRouter(Db db) {
       'a_receber': (aReceberRow['s'] as num).toDouble(),
       'em_producao_hoje': emProducao,
       'urgentes': urgentes,
+      'atrasados': atrasados,
       'prazos_vencendo': vencendo,
       'ocupacao_semana': ocupacao,
       'hoje': hojeStr,

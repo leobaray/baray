@@ -1,7 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- usesCleartextTraffic=true é deliberado: o servidor Baray roda em LAN
+         interna (http://10.x.x.x). Em produção fora de LAN, mover para HTTPS
+         e usar networkSecurityConfig. -->
     <application
-        android:label="empresa_app"
+        android:label="Baray"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

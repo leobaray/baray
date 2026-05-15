@@ -17,7 +17,8 @@ Router configuracoesRouter(Db db) {
 
   r.get('/', (Request req) {
     final rows = db.raw.select(
-      "SELECT * FROM configuracoes WHERE chave != 'proximo_lote' ORDER BY chave",
+      'SELECT chave, valor, tipo, descricao, atualizado_em FROM configuracoes '
+      "WHERE chave != 'proximo_lote' ORDER BY chave",
     );
     return json(rows.map((row) => Configuracao.fromRow(row).toJson()).toList());
   });
@@ -31,7 +32,10 @@ Router configuracoesRouter(Db db) {
   });
 
   r.get('/<chave>', (Request req, String chave) {
-    final rows = db.raw.select('SELECT * FROM configuracoes WHERE chave = ?', [chave]);
+    final rows = db.raw.select(
+      'SELECT chave, valor, tipo, descricao, atualizado_em FROM configuracoes WHERE chave = ?',
+      [chave],
+    );
     if (rows.isEmpty) return json({'error': 'chave não encontrada'}, status: 404);
     return json(Configuracao.fromRow(rows.first).toJson());
   });
@@ -46,10 +50,13 @@ Router configuracoesRouter(Db db) {
 
     db.raw.execute(
       'UPDATE configuracoes SET valor = ?, atualizado_em = ? WHERE chave = ?',
-      [valor, DateTime.now().toIso8601String(), chave],
+      [valor, DateTime.now().toUtc().toIso8601String(), chave],
     );
 
-    final updated = db.raw.select('SELECT * FROM configuracoes WHERE chave = ?', [chave]).first;
+    final updated = db.raw.select(
+      'SELECT chave, valor, tipo, descricao, atualizado_em FROM configuracoes WHERE chave = ?',
+      [chave],
+    ).first;
     return json(Configuracao.fromRow(updated).toJson());
   });
 

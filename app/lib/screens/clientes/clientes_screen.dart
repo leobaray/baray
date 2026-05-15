@@ -3,14 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../models/cliente.dart';
 import '../../state/clientes_provider.dart';
 import '../../theme/breakpoints.dart';
+import '../../util/formatters.dart';
 import '../../widgets/cliente_detalhe_view.dart';
 import '../../widgets/cliente_row.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/list_skeleton.dart';
 
 const _ordenacoes = <String, String>{
   'nome': 'Nome (A-Z)',
@@ -79,11 +80,6 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
       appBar: AppBar(
         title: const Text('Clientes'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-            onPressed: () => ref.invalidate(clientesProvider),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -154,7 +150,7 @@ class _ClientesScreenState extends ConsumerState<ClientesScreen> {
     required bool fullWidth,
   }) {
     return clientes.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const ListSkeleton(itemHeight: 72),
       error: (e, _) => ErrorState(
         message: e.toString(),
         onRetry: () => ref.invalidate(clientesProvider),
@@ -252,16 +248,16 @@ class _FiltrosHeader extends ConsumerWidget {
             controller: buscaCtl,
             focusNode: buscaFocus,
             decoration: InputDecoration(
-              hintText: 'Buscar por nome ou telefone...',
+              labelText: 'Buscar',
+              hintText: 'nome ou telefone',
               prefixIcon: const Icon(Icons.search, size: 18),
               isDense: true,
               suffixIcon: buscaCtl.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.close, size: 16),
+                      icon: const Icon(Icons.close, size: 18),
                       onPressed: onLimparBusca,
-                      visualDensity: VisualDensity.compact,
-                      splashRadius: 16,
                       tooltip: 'Limpar',
+                      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                     )
                   : null,
             ),
@@ -382,28 +378,38 @@ class _ResumoBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final comDebito = clientes.where((c) => c.valorDevendo > 0.01).length;
     final totalDebito = clientes.fold<double>(0, (s, c) => s + c.valorDevendo);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLowest,
-        border: Border(bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _Metric(label: 'clientes', valor: '${clientes.length}', color: cs.onSurface),
-            if (comDebito > 0) ...[
-              const SizedBox(width: 16),
-              _Metric(label: 'com débito', valor: '$comDebito', color: cs.error),
-              const SizedBox(width: 16),
-              _Metric(label: 'em aberto', valor: moeda.format(totalDebito), color: cs.error),
+    final resumoTexto = [
+      '${clientes.length} clientes',
+      if (comDebito > 0) '$comDebito com débito (${moeda.format(totalDebito)})',
+    ].join(', ');
+
+    return Semantics(
+      liveRegion: true,
+      label: 'Resumo: $resumoTexto',
+      container: true,
+      child: Container(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          border: Border(bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
+        ),
+        padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _Metric(label: 'clientes', valor: '${clientes.length}', color: cs.onSurface),
+              if (comDebito > 0) ...[
+                const SizedBox(width: 16),
+                _Metric(label: 'com débito', valor: '$comDebito', color: cs.error),
+                const SizedBox(width: 16),
+                _Metric(label: 'em aberto', valor: moeda.format(totalDebito), color: cs.error),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -437,7 +443,7 @@ class _Metric extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             color: cs.onSurfaceVariant,
             letterSpacing: 0.3,

@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
-
 import '../../api/api_client.dart';
 import '../../models/cliente.dart';
 import '../../models/orcamento.dart';
@@ -15,6 +13,9 @@ import '../../state/dashboard_provider.dart';
 import '../../state/configuracoes_provider.dart';
 import '../../state/orcamento_provider.dart';
 import '../../state/pedidos_provider.dart';
+import '../../util/formatters.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/list_skeleton.dart';
 
 // Breakpoint pra layout 2 colunas no form (cabe num monitor de oficina apertado).
 const double _kWide = 1080;
@@ -39,7 +40,7 @@ class PedidoFormScreen extends ConsumerStatefulWidget {
 
 class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _data = DateFormat('dd/MM/yyyy', 'pt_BR');
+  final _data = AppFormatters.data;
 
   // Controllers
   final _telefoneCtl = TextEditingController();
@@ -88,11 +89,54 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
   late final FocusNode _autoClienteFocus;
   bool _selecionandoCliente = false;
   Timer? _calcDebounce;
+
+  // Snapshot do estado inicial — _dirty é derivado por comparação, não flag
+  // mutável. Evita "Descartar alterações?" injusto se um listener disparou
+  // durante _carregar sem que o usuário tenha tocado em nada.
+  _PedidoFormSnapshot _snapshot = _PedidoFormSnapshot.empty;
   bool _dirty = false;
 
-  void _markDirty() {
+  _PedidoFormSnapshot _currentSnapshot() => _PedidoFormSnapshot(
+        clienteId: _clienteId,
+        clienteNome: _autoClienteCtl.text,
+        telefone: _telefoneCtl.text,
+        email: _emailCtl.text,
+        peca: _pecaCtl.text,
+        quantidade: _quantidadeCtl.text,
+        valor: _valorCtl.text,
+        corPeca: _corPecaCtl.text,
+        tamanhoPeca: _tamanhoPecaCtl.text,
+        tecido: _tecidoCtl.text,
+        arteCores: _arteCoresCtl.text,
+        arteTamanho: _arteTamanhoCtl.text,
+        artePosicao: _artePosicaoCtl.text,
+        arteObservacao: _arteObservacaoCtl.text,
+        endereco: _enderecoCtl.text,
+        entreguePor: _entreguePorCtl.text,
+        observacao: _observacaoCtl.text,
+        tecnica: _tecnica,
+        regiao: _regiao,
+        tipoPeca: _tipoPeca,
+        status: _status,
+        statusPagamento: _statusPagamento,
+        urgente: _urgente,
+        formaEntrega: _formaEntrega,
+        formaPagamento: _formaPagamento,
+        autoAgendar: _autoAgendar,
+        dataChegada: _dataChegada,
+        dataProducao: _dataProducao,
+        dataEntregaCombinada: _dataEntregaCombinada,
+      );
+
+  void _capturarSnapshot() {
+    _snapshot = _currentSnapshot();
+    _dirty = false;
+  }
+
+  void _recheckDirty() {
     if (_selecionandoCliente) return;
-    if (!_dirty) _dirty = true;
+    final novo = _snapshot != _currentSnapshot();
+    if (novo != _dirty) setState(() => _dirty = novo);
   }
 
   bool get _isEdicao => widget.pedidoId != null;
@@ -115,7 +159,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       _arteTamanhoCtl, _artePosicaoCtl, _arteObservacaoCtl,
       _enderecoCtl, _entreguePorCtl, _observacaoCtl, _autoClienteCtl,
     ]) {
-      c.addListener(_markDirty);
+      c.addListener(_recheckDirty);
     }
     if (widget.pedidoId != null) {
       _carregar();
@@ -127,8 +171,8 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
         _aplicarValoresIniciais(initial);
         _selecionandoCliente = false;
       }
+      _capturarSnapshot();
       _agendarRecalculo();
-      _dirty = false;
     }
   }
 
@@ -140,9 +184,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     if (initial['quantidade'] != null) _quantidadeCtl.text = initial['quantidade']!;
     if (initial['valor'] != null) {
       final v = double.tryParse(initial['valor']!);
-      _valorCtl.text = v != null
-          ? v.toStringAsFixed(2).replaceAll('.', ',')
-          : initial['valor']!;
+      _valorCtl.text = v != null ? formatValorBR(v) : initial['valor']!;
     }
     if (initial['arte_cores'] != null) _arteCoresCtl.text = initial['arte_cores']!;
     if (initial['urgente'] == 'true') _urgente = true;
@@ -166,8 +208,8 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       _selecionandoCliente = true;
       _preencherPedido(p);
       _selecionandoCliente = false;
+      _capturarSnapshot();
       _agendarRecalculo();
-      _dirty = false;
     } catch (e) {
       _erro = e.toString();
     } finally {
@@ -185,7 +227,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     _regiao = p.regiao ?? 'FRENTE/COSTAS';
     _tipoPeca = p.tipoPeca;
     _quantidadeCtl.text = p.quantidade?.toString() ?? '';
-    _valorCtl.text = p.valor.toStringAsFixed(2).replaceAll('.', ',');
+    _valorCtl.text = formatValorBR(p.valor);
     _corPecaCtl.text = p.corPeca ?? '';
     _tamanhoPecaCtl.text = p.tamanhoPeca ?? '';
     _tecidoCtl.text = p.tecido ?? '';
@@ -216,7 +258,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       _telefoneCtl.text = c.telefone ?? '';
       _emailCtl.text = c.email ?? '';
       _selecionandoCliente = false;
-      _dirty = false;
+      _capturarSnapshot();
       if (mounted) setState(() {});
     } catch (_) {
       _selecionandoCliente = false;
@@ -248,10 +290,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     super.dispose();
   }
 
-  double? _parseValor(String txt) {
-    final t = txt.trim().replaceAll('.', '').replaceAll(',', '.');
-    return double.tryParse(t);
-  }
+  double? _parseValor(String txt) => parseValorBR(txt);
 
   Future<void> _pickDate(DateTime? current, ValueChanged<DateTime?> onPick) async {
     final inicial = current ?? DateTime.now();
@@ -310,7 +349,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
   void _aplicarTotalCalculado() {
     final r = _orcamentoResultado;
     if (r == null) return;
-    final txt = r.total.toStringAsFixed(2).replaceAll('.', ',');
+    final txt = formatValorBR(r.total);
     _valorCtl.value = TextEditingValue(
       text: txt,
       selection: TextSelection.collapsed(offset: txt.length),
@@ -384,8 +423,16 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       }
       ref.invalidate(pedidosProvider);
       ref.invalidate(dashboardProvider);
-      _dirty = false;
-      if (mounted) context.pop();
+      _capturarSnapshot();
+      if (mounted) {
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_isEdicao ? 'Pedido atualizado' : 'Pedido criado'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       final errorMsg = e.toString();
       final mensagem = errorMsg.contains('cliente_nome')
@@ -425,7 +472,15 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       await ref.read(apiClientProvider).deletarPedido(widget.pedidoId!);
       ref.invalidate(pedidosProvider);
       ref.invalidate(dashboardProvider);
-      if (mounted) context.pop();
+      if (mounted) {
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Pedido ${_original?.loteFormatado ?? ""} excluído'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _erro = e.toString());
     }
@@ -435,8 +490,8 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Confirmar saída?'),
-        content: Text('Confirmar saída do pedido ${_original?.loteFormatado ?? ""}?'),
+        title: const Text('Confirmar entrega?'),
+        content: Text('Marcar o pedido ${_original?.loteFormatado ?? ""} como entregue?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, false),
@@ -444,7 +499,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Confirmar'),
+            child: const Text('Confirmar entrega'),
           ),
         ],
       ),
@@ -458,8 +513,13 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
       ref.invalidate(pedidoProvider(widget.pedidoId!));
       ref.invalidate(dashboardProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saída confirmada ✓')));
         context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Entrega confirmada'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } catch (e) {
       setState(() => _erro = e.toString());
@@ -477,7 +537,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
     if (_carregando) {
       return Scaffold(
         appBar: AppBar(title: Text(_isEdicao ? 'Editar pedido' : 'Novo pedido')),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const DetailSkeleton(),
       );
     }
 
@@ -532,6 +592,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
         ),
         body: Form(
           key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= _kWide;
@@ -725,7 +786,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   value: _tipoPeca,
                   onChanged: (v) {
                     setState(() => _tipoPeca = v);
-                    _markDirty();
+                    _recheckDirty();
                     _agendarRecalculo();
                   },
                 ),
@@ -748,7 +809,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             value: _regiao,
             onChanged: (v) {
               setState(() => _regiao = v);
-              _markDirty();
+              _recheckDirty();
               _agendarRecalculo();
             },
           ),
@@ -757,7 +818,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
             selecionada: _tecnica,
             onChanged: (t) {
               setState(() => _tecnica = t);
-              _markDirty();
+              _recheckDirty();
               _agendarRecalculo();
             },
           ),
@@ -781,7 +842,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   value: _urgente,
                   onChanged: (v) {
                     setState(() => _urgente = v);
-                    _markDirty();
+                    _recheckDirty();
                     _agendarRecalculo();
                   },
                 ),
@@ -807,11 +868,11 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   data: _dataChegada,
                   onPick: () => _pickDate(_dataChegada, (d) {
                     setState(() => _dataChegada = d);
-                    _markDirty();
+                    _recheckDirty();
                   }),
                   onClear: () => setState(() {
                     _dataChegada = null;
-                    _markDirty();
+                    _recheckDirty();
                   }),
                 ),
               ),
@@ -825,12 +886,12 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   onPick: () => _pickDate(_dataProducao, (d) {
                     setState(() {
                       _dataProducao = d;
-                      _markDirty();
+                      _recheckDirty();
                     });
                   }),
                   onClear: () => setState(() {
                     _dataProducao = null;
-                    _markDirty();
+                    _recheckDirty();
                   }),
                 ),
               ),
@@ -845,7 +906,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
                   _autoAgendar = v;
                   if (v) _dataProducao = null;
                 });
-                _markDirty();
+                _recheckDirty();
               },
             ),
           ],
@@ -928,7 +989,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           value: _formaEntrega,
           onChanged: (v) {
             setState(() => _formaEntrega = v);
-            _markDirty();
+            _recheckDirty();
           },
         ),
         const SizedBox(height: 8),
@@ -941,11 +1002,11 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           data: _dataEntregaCombinada,
           onPick: () => _pickDate(_dataEntregaCombinada, (d) {
             setState(() => _dataEntregaCombinada = d);
-            _markDirty();
+            _recheckDirty();
           }),
           onClear: () => setState(() {
             _dataEntregaCombinada = null;
-            _markDirty();
+            _recheckDirty();
           }),
         ),
       ],
@@ -959,7 +1020,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           value: _statusPagamento,
           onChanged: (v) {
             setState(() => _statusPagamento = v);
-            _markDirty();
+            _recheckDirty();
           },
         ),
         const SizedBox(height: 8),
@@ -1095,7 +1156,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           _emailCtl.text = c.email ?? '';
         });
         _selecionandoCliente = false;
-        if (!_dirty) _dirty = true;
+        _recheckDirty();
       },
       fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
         return TextFormField(
@@ -1104,7 +1165,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           validator: (v) => (v == null || v.trim().isEmpty) ? 'Obrigatório' : null,
           decoration: InputDecoration(
             labelText: 'Nome do cliente *',
-            hintText: 'Digite para buscar ou criar...',
+            hintText: 'Digite para buscar ou criar',
             prefixIcon: const Icon(Icons.person_outline, size: 18),
             isDense: true,
             suffixIcon: _clienteId != null
@@ -1116,6 +1177,8 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           ),
           textInputAction: TextInputAction.next,
           onFieldSubmitted: (_) => onFieldSubmitted(),
+          autofillHints: const [AutofillHints.name],
+          textCapitalization: TextCapitalization.words,
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
@@ -1144,6 +1207,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
         ),
         keyboardType: TextInputType.phone,
         textInputAction: TextInputAction.next,
+        autofillHints: const [AutofillHints.telephoneNumber],
       );
 
   Widget _campoEmail() => TextFormField(
@@ -1155,6 +1219,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
         ),
         keyboardType: TextInputType.emailAddress,
         textInputAction: TextInputAction.next,
+        autofillHints: const [AutofillHints.email],
         validator: (v) {
           final t = v?.trim() ?? '';
           if (t.isEmpty) return null;
@@ -1244,6 +1309,8 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
           alignLabelWithHint: true,
         ),
         maxLines: 2,
+        autofillHints: const [AutofillHints.fullStreetAddress],
+        textCapitalization: TextCapitalization.words,
       );
 
   Widget _statusDropdown() => DropdownButtonFormField<String>(
@@ -1263,7 +1330,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
         ],
         onChanged: (v) {
           setState(() => _status = v ?? 'pendente');
-          _markDirty();
+          _recheckDirty();
         },
       );
 
@@ -1286,7 +1353,7 @@ class _PedidoFormScreenState extends ConsumerState<PedidoFormScreen> {
         ],
         onChanged: (v) {
           setState(() => _formaPagamento = v);
-          _markDirty();
+          _recheckDirty();
         },
       );
 
@@ -1330,21 +1397,7 @@ class _Card extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: cs.primary),
-              const SizedBox(width: 6),
-              Text(
-                title.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.9,
-                  color: cs.primary,
-                ),
-              ),
-            ],
-          ),
+          BlockHeader(icon: icon, label: title),
           const SizedBox(height: 10),
           child,
         ],
@@ -1397,7 +1450,7 @@ class _NumberStepper extends StatelessWidget {
         Text(
           obrigatorio ? '$label *' : label,
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
             color: cs.onSurfaceVariant,
@@ -1521,7 +1574,7 @@ class _MoletomSelector extends ConsumerWidget {
         Text(
           'Tipo de peça',
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
             color: cs.onSurfaceVariant,
@@ -1566,7 +1619,7 @@ class _MoletomSelector extends ConsumerWidget {
                           Text(
                             o.$3!,
                             style: TextStyle(
-                              fontSize: 9.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w700,
                               color: selecionado
                                   ? cs.onPrimaryContainer.withValues(alpha: 0.8)
@@ -1606,7 +1659,7 @@ class _RegiaoSelector extends StatelessWidget {
         Text(
           'Região da estampa',
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
             color: cs.onSurfaceVariant,
@@ -1659,7 +1712,7 @@ class _RegiaoSelector extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   color: selecionado
                                       ? cs.onPrimaryContainer.withValues(alpha: 0.75)
                                       : cs.onSurfaceVariant,
@@ -1697,7 +1750,7 @@ class _TecnicaGrid extends ConsumerWidget {
         Text(
           'Técnica de impressão',
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
             color: cs.onSurfaceVariant,
@@ -1799,7 +1852,7 @@ class _UrgenteToggle extends ConsumerWidget {
         Text(
           'Prazo',
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.4,
             color: cs.onSurfaceVariant,
@@ -1872,7 +1925,7 @@ class _OrcamentoBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final moeda = AppFormatters.moeda;
     final temResultado = resultado != null;
 
     return AnimatedContainer(
@@ -1891,45 +1944,34 @@ class _OrcamentoBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(Icons.receipt_long_outlined, size: 14, color: cs.primary),
-              const SizedBox(width: 6),
-              Text(
-                'ORÇAMENTO',
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.9,
-                  color: cs.primary,
-                ),
-              ),
-              const Spacer(),
-              if (calculando)
-                SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 1.6, color: cs.primary),
-                )
-              else if (resultado != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerLowest,
-                    border: Border.all(color: cs.outlineVariant),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Faixa ${resultado!.faixaQtd}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: cs.onSurfaceVariant,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
-            ],
+          BlockHeader(
+            icon: Icons.receipt_long_outlined,
+            label: 'Orçamento',
+            trailing: calculando
+                ? SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 1.6, color: cs.primary),
+                  )
+                : (resultado != null
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerLowest,
+                          border: Border.all(color: cs.outlineVariant),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Faixa ${resultado!.faixaQtd}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurfaceVariant,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      )
+                    : null),
           ),
 
           if (erro != null) ...[
@@ -1956,7 +1998,7 @@ class _OrcamentoBox extends StatelessWidget {
             Text(
               'Sugestão da tabela',
               style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 12,
                 color: cs.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
@@ -2018,6 +2060,7 @@ class _OrcamentoBox extends StatelessWidget {
                     fontFeatures: [FontFeature.tabularFigures()],
                   ),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: const [BrlInputFormatter()],
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Obrigatório';
                     if (parseValor(v) == null) return 'Inválido';
@@ -2062,7 +2105,7 @@ class _OrcMini extends StatelessWidget {
       children: [
         Text(
           '$label ',
-          style: TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant),
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
         ),
         Text(
           valor,
@@ -2277,7 +2320,7 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final moeda = AppFormatters.moeda;
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainerLowest,
@@ -2300,7 +2343,7 @@ class _Footer extends StatelessWidget {
                       Text(
                         'TOTAL DO PEDIDO',
                         style: TextStyle(
-                          fontSize: 9.5,
+                          fontSize: 11,
                           letterSpacing: 0.7,
                           color: cs.onSurfaceVariant,
                           fontWeight: FontWeight.w700,
@@ -2359,7 +2402,7 @@ class _LoteBadge extends StatelessWidget {
       child: Text(
         lote,
         style: TextStyle(
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.4,
           color: cs.onPrimaryContainer,
@@ -2464,7 +2507,7 @@ class _AutocompleteOptions extends StatelessWidget {
                       child: Text(
                         c.iniciais,
                         style: TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: theme.colorScheme.onPrimaryContainer,
                         ),
@@ -2550,7 +2593,7 @@ class _DateField extends StatelessWidget {
         child: Text(
           !enabled
               ? (placeholderDesabilitado ?? '—')
-              : (data == null ? '—' : DateFormat('dd/MM/yyyy', 'pt_BR').format(data!)),
+              : (data == null ? '—' : AppFormatters.data.format(data!)),
           style: TextStyle(
             fontSize: 12.5,
             color: !enabled
@@ -2563,4 +2606,170 @@ class _DateField extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SNAPSHOT (pra detectar dirty real comparando com estado inicial)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _PedidoFormSnapshot {
+  final String? clienteId;
+  final String clienteNome;
+  final String telefone;
+  final String email;
+  final String peca;
+  final String quantidade;
+  final String valor;
+  final String corPeca;
+  final String tamanhoPeca;
+  final String tecido;
+  final String arteCores;
+  final String arteTamanho;
+  final String artePosicao;
+  final String arteObservacao;
+  final String endereco;
+  final String entreguePor;
+  final String observacao;
+  final String? tecnica;
+  final String regiao;
+  final String? tipoPeca;
+  final String status;
+  final String statusPagamento;
+  final bool urgente;
+  final String formaEntrega;
+  final String? formaPagamento;
+  final bool autoAgendar;
+  final DateTime? dataChegada;
+  final DateTime? dataProducao;
+  final DateTime? dataEntregaCombinada;
+
+  const _PedidoFormSnapshot({
+    required this.clienteId,
+    required this.clienteNome,
+    required this.telefone,
+    required this.email,
+    required this.peca,
+    required this.quantidade,
+    required this.valor,
+    required this.corPeca,
+    required this.tamanhoPeca,
+    required this.tecido,
+    required this.arteCores,
+    required this.arteTamanho,
+    required this.artePosicao,
+    required this.arteObservacao,
+    required this.endereco,
+    required this.entreguePor,
+    required this.observacao,
+    required this.tecnica,
+    required this.regiao,
+    required this.tipoPeca,
+    required this.status,
+    required this.statusPagamento,
+    required this.urgente,
+    required this.formaEntrega,
+    required this.formaPagamento,
+    required this.autoAgendar,
+    required this.dataChegada,
+    required this.dataProducao,
+    required this.dataEntregaCombinada,
+  });
+
+  static const empty = _PedidoFormSnapshot(
+    clienteId: null,
+    clienteNome: '',
+    telefone: '',
+    email: '',
+    peca: '',
+    quantidade: '',
+    valor: '',
+    corPeca: '',
+    tamanhoPeca: '',
+    tecido: '',
+    arteCores: '',
+    arteTamanho: '',
+    artePosicao: '',
+    arteObservacao: '',
+    endereco: '',
+    entreguePor: '',
+    observacao: '',
+    tecnica: null,
+    regiao: 'FRENTE/COSTAS',
+    tipoPeca: null,
+    status: 'pendente',
+    statusPagamento: 'devendo',
+    urgente: false,
+    formaEntrega: 'retirada',
+    formaPagamento: null,
+    autoAgendar: true,
+    dataChegada: null,
+    dataProducao: null,
+    dataEntregaCombinada: null,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PedidoFormSnapshot &&
+      other.clienteId == clienteId &&
+      other.clienteNome == clienteNome &&
+      other.telefone == telefone &&
+      other.email == email &&
+      other.peca == peca &&
+      other.quantidade == quantidade &&
+      other.valor == valor &&
+      other.corPeca == corPeca &&
+      other.tamanhoPeca == tamanhoPeca &&
+      other.tecido == tecido &&
+      other.arteCores == arteCores &&
+      other.arteTamanho == arteTamanho &&
+      other.artePosicao == artePosicao &&
+      other.arteObservacao == arteObservacao &&
+      other.endereco == endereco &&
+      other.entreguePor == entreguePor &&
+      other.observacao == observacao &&
+      other.tecnica == tecnica &&
+      other.regiao == regiao &&
+      other.tipoPeca == tipoPeca &&
+      other.status == status &&
+      other.statusPagamento == statusPagamento &&
+      other.urgente == urgente &&
+      other.formaEntrega == formaEntrega &&
+      other.formaPagamento == formaPagamento &&
+      other.autoAgendar == autoAgendar &&
+      other.dataChegada == dataChegada &&
+      other.dataProducao == dataProducao &&
+      other.dataEntregaCombinada == dataEntregaCombinada;
+
+  @override
+  int get hashCode => Object.hashAll([
+        clienteId,
+        clienteNome,
+        telefone,
+        email,
+        peca,
+        quantidade,
+        valor,
+        corPeca,
+        tamanhoPeca,
+        tecido,
+        arteCores,
+        arteTamanho,
+        artePosicao,
+        arteObservacao,
+        endereco,
+        entreguePor,
+        observacao,
+        tecnica,
+        regiao,
+        tipoPeca,
+        status,
+        statusPagamento,
+        urgente,
+        formaEntrega,
+        formaPagamento,
+        autoAgendar,
+        dataChegada,
+        dataProducao,
+        dataEntregaCombinada,
+      ]);
 }

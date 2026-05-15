@@ -14,8 +14,10 @@ import '../state/dashboard_provider.dart';
 import '../state/pedidos_provider.dart';
 import '../theme/density.dart';
 import '../theme/spacing.dart';
+import '../util/formatters.dart';
 import 'empty_state.dart';
 import 'fechamento_status_badge.dart';
+import 'list_skeleton.dart';
 import 'pedido_form_sheet.dart';
 import 'pedido_row.dart';
 
@@ -39,7 +41,7 @@ class ClienteDetalheView extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return valAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const DetailSkeleton(),
       error: (e, _) => ErrorState(
         message: e.toString(),
         onRetry: () => ref.invalidate(clienteDetalheProvider(clienteId)),
@@ -62,20 +64,35 @@ class ClienteDetalheView extends ConsumerWidget {
                   bottom: BorderSide(color: theme.colorScheme.outlineVariant),
                 ),
               ),
-              child: TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                labelPadding: const EdgeInsets.symmetric(horizontal: 14),
-                labelStyle: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.3,
+              // ShaderMask com fade na borda direita sinaliza "tem mais
+              // conteúdo à direita" mesmo antes do usuário começar a scrollar.
+              child: ShaderMask(
+                shaderCallback: (rect) => const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  stops: [0.0, 0.9, 1.0],
+                  colors: [
+                    Colors.white,
+                    Colors.white,
+                    Color(0x00FFFFFF),
+                  ],
+                ).createShader(rect),
+                blendMode: BlendMode.dstIn,
+                child: TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 14),
+                  labelStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Ciclo atual', height: 36),
+                    Tab(text: 'Pedidos', height: 36),
+                    Tab(text: 'Fechamentos', height: 36),
+                  ],
                 ),
-                tabs: const [
-                  Tab(text: 'Ciclo atual', height: 36),
-                  Tab(text: 'Pedidos', height: 36),
-                  Tab(text: 'Fechamentos', height: 36),
-                ],
               ),
             ),
             Expanded(
@@ -168,7 +185,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
@@ -237,6 +254,10 @@ class _Header extends StatelessWidget {
                 icon: const Icon(Icons.edit_outlined, size: 18),
                 tooltip: 'Editar cliente',
                 visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(
+                  minWidth: AppButtons.minTouchTarget,
+                  minHeight: AppButtons.minTouchTarget,
+                ),
                 onPressed: () => onAcoes(_AcaoCliente.editar),
               ),
               if (showCloseButton)
@@ -244,6 +265,10 @@ class _Header extends StatelessWidget {
                   icon: const Icon(Icons.close, size: 18),
                   tooltip: 'Fechar',
                   visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: AppButtons.minTouchTarget,
+                    minHeight: AppButtons.minTouchTarget,
+                  ),
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
             ],
@@ -271,7 +296,7 @@ class _ContatoLine extends StatelessWidget {
     if (partes.isEmpty) {
       return Text(
         'Sem contato cadastrado',
-        style: TextStyle(fontSize: AppType.caption, color: cs.outline),
+        style: TextStyle(fontSize: AppType.caption, color: cs.onSurfaceVariant),
       );
     }
     return Text(
@@ -356,7 +381,7 @@ class _Metric extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            fontSize: 10.5,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             color: cs.onSurfaceVariant,
             letterSpacing: 0.3,
@@ -379,7 +404,7 @@ class _CicloAtualTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 2);
+    final moeda = AppFormatters.moeda;
     final dataFmt = DateFormat('dd/MM/yyyy');
     final f = cliente.fechamentoAtual;
 
@@ -434,21 +459,24 @@ class _CicloAtualTab extends ConsumerWidget {
               const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: () => _onEstender(context, ref, f),
-                icon: const Icon(Icons.schedule_outlined, size: 14),
+                icon: const Icon(Icons.schedule_outlined, size: 16),
                 label: const Text('Estender', style: TextStyle(fontSize: 12)),
                 style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  // Mantém área >= 44 (Material 3 / WCAG 2.5.5).
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  tapTargetSize: MaterialTapTargetSize.padded,
                 ),
               ),
               const SizedBox(width: 4),
               FilledButton.tonalIcon(
                 onPressed: () => _onFechar(context, ref, f),
-                icon: const Icon(Icons.lock_outline, size: 14),
+                icon: const Icon(Icons.lock_outline, size: 16),
                 label: const Text('Fechar', style: TextStyle(fontSize: 12)),
                 style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  tapTargetSize: MaterialTapTargetSize.padded,
                 ),
               ),
             ],
@@ -465,7 +493,7 @@ class _CicloAtualTab extends ConsumerWidget {
                         itemCount: pedidosCiclo.length,
                         itemBuilder: (_, i) => PedidoRow(
                           pedido: pedidosCiclo[i],
-                          onTap: () => context.push('/pedidos/${pedidosCiclo[i].id}'),
+                          onTap: () => context.push('/pedidos/${pedidosCiclo[i].id}?from=cliente'),
                           zebra: i.isOdd,
                         ),
                       ),
@@ -507,26 +535,9 @@ class _CicloVazio extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.inbox_outlined, size: 36, color: cs.outline),
-            const SizedBox(height: 8),
-            Text(
-              'Nenhum pedido no ciclo atual',
-              style: TextStyle(
-                fontSize: 13,
-                color: cs.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
+    return const EmptyState.compact(
+      icon: Icons.inbox_outlined,
+      titulo: 'Nenhum pedido no ciclo atual',
     );
   }
 }
@@ -588,7 +599,7 @@ class _CelResumo extends StatelessWidget {
         Text(
           label.toUpperCase(),
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.6,
             color: cs.onSurfaceVariant,
@@ -636,7 +647,7 @@ class _PedidosTab extends StatelessWidget {
             itemCount: pedidos.length,
             itemBuilder: (_, i) => PedidoRow(
               pedido: pedidos[i],
-              onTap: () => context.push('/pedidos/${pedidos[i].id}'),
+              onTap: () => context.push('/pedidos/${pedidos[i].id}?from=cliente'),
               zebra: i.isOdd,
             ),
           ),
@@ -653,7 +664,7 @@ class _PedidosResumo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final total = pedidos.fold<double>(0, (s, p) => s + p.valor);
     final devendo = pedidos
         .where((p) => p.statusPagamento != 'pago')
@@ -701,7 +712,7 @@ class _FechamentosTab extends ConsumerWidget {
     final fechAsync = ref.watch(fechamentosProvider(clienteId));
 
     return fechAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const ListSkeleton(items: 4),
       error: (e, _) => ErrorState(
         message: e.toString(),
         onRetry: () => ref.invalidate(fechamentosProvider(clienteId)),
@@ -728,7 +739,7 @@ class _FechamentosTab extends ConsumerWidget {
 
   Widget _tabelaDesktop(BuildContext context, List<ClienteFechamento> lista) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final dataFmt = DateFormat('dd/MM/yyyy');
 
     Widget header(String s, {TextAlign? align}) => Text(
@@ -868,7 +879,7 @@ class _FechamentosTab extends ConsumerWidget {
 
   Widget _listaMobile(BuildContext context, List<ClienteFechamento> lista) {
     final cs = Theme.of(context).colorScheme;
-    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$', decimalDigits: 0);
+    final moeda = AppFormatters.moedaInteira;
     final dataFmt = DateFormat('dd/MM/yy');
 
     return ListView.builder(
