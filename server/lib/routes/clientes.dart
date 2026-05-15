@@ -10,6 +10,7 @@ import '../fechamentos_util.dart';
 import '../models/cliente.dart';
 import '../models/cliente_fechamento.dart';
 import '../models/pedido.dart';
+import '../sql_like.dart';
 import '../validators.dart';
 
 const String _clienteCols =
@@ -51,8 +52,11 @@ Router clientesRouter(Db db) {
     final where = <String>[];
     final args = <Object?>[];
     if (busca != null && busca.isNotEmpty) {
-      where.add('(c.nome LIKE ? OR c.telefone LIKE ?)');
-      args.addAll(['%$busca%', '%$busca%']);
+      // B-04: escapa metacaracteres `%`/`_` do termo do usuário e força
+      // `ESCAPE '\'` na cláusula — sem isso `arq_test` matcharia `arq1test`.
+      where.add(r"(c.nome LIKE ? ESCAPE '\' OR c.telefone LIKE ? ESCAPE '\')");
+      final termo = '%${escapeLikePattern(busca)}%';
+      args.addAll([termo, termo]);
     }
 
     final sql = StringBuffer(

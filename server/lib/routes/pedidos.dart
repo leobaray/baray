@@ -9,6 +9,7 @@ import '../db.dart';
 import '../logger.dart';
 import '../models/pedido.dart';
 import '../pagamentos_util.dart';
+import '../sql_like.dart';
 import '../validators.dart';
 
 /// Colunas explícitas (M-10) — manter em sincronia com `Pedido.fromRow`.
@@ -49,17 +50,22 @@ Router pedidosRouter(Db db) {
     eq('status_pagamento', qp['status_pagamento']);
     eq('tecnica', qp['tecnica']);
 
+    // B-04: escapar `%` e `_` no termo + `ESCAPE '\'` na cláusula, pra que
+    // a busca por ex. `arq_test` não vire wildcard `arq?test`.
     if ((qp['cliente'] ?? '').isNotEmpty) {
-      where.add('cliente_nome LIKE ?');
-      args.add('%${qp['cliente']}%');
+      where.add(r"cliente_nome LIKE ? ESCAPE '\'");
+      args.add('%${escapeLikePattern(qp['cliente']!)}%');
     }
     if ((qp['cliente_id'] ?? '').isNotEmpty) {
       where.add('cliente_id = ?');
       args.add(qp['cliente_id']);
     }
     if ((qp['busca'] ?? '').isNotEmpty) {
-      where.add('(descricao LIKE ? OR observacao LIKE ? OR cliente_nome LIKE ? OR CAST(lote AS TEXT) LIKE ?)');
-      final termo = '%${qp['busca']}%';
+      where.add(
+        r"(descricao LIKE ? ESCAPE '\' OR observacao LIKE ? ESCAPE '\' "
+        r"OR cliente_nome LIKE ? ESCAPE '\' OR CAST(lote AS TEXT) LIKE ? ESCAPE '\')",
+      );
+      final termo = '%${escapeLikePattern(qp['busca']!)}%';
       args.addAll([termo, termo, termo, termo]);
     }
     if (qp['urgente'] == 'true') where.add('urgente = 1');
