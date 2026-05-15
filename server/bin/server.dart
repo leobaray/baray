@@ -7,6 +7,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import 'package:empresa_server/auth_middleware.dart';
 import 'package:empresa_server/db.dart';
+import 'package:empresa_server/error_middleware.dart';
 import 'package:empresa_server/logger.dart';
 import 'package:empresa_server/routes/agenda.dart';
 import 'package:empresa_server/routes/clientes.dart';
@@ -58,6 +59,7 @@ Future<void> main(List<String> args) async {
   root.mount('/agenda', agendaRouter(db).call);
 
   final handler = Pipeline()
+      .addMiddleware(errorHandler())
       .addMiddleware(_logRequests())
       .addMiddleware(_cors(allowedOrigins))
       .addMiddleware(apiKeyAuth(token))
