@@ -34,6 +34,22 @@ String _generateToken() {
   return base64UrlEncode(bytes).replaceAll('=', '');
 }
 
+/// Comparação constant-time de dois tokens (defesa em profundidade contra
+/// timing attacks — CWE-208). Não usa `==` porque a implementação de
+/// `String.operator==` em Dart curto-circuita no primeiro mismatch, vazando
+/// informação de prefixo correto via timing observável.
+///
+/// Length mismatch ainda é detectável (retornamos `false` cedo), mas o token
+/// tem comprimento fixo aqui, então isso não é relevante na prática.
+bool constantTimeEquals(String a, String b) {
+  if (a.length != b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) {
+    diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  }
+  return diff == 0;
+}
+
 const Set<String> _publicPaths = {'/health'};
 
 bool _isPreflight(Request req) => req.method == 'OPTIONS';
@@ -51,7 +67,9 @@ Middleware apiKeyAuth(String expectedToken) {
       final provided = req.headers['x-api-key'] ??
           req.headers['X-API-Key'] ??
           _stripBearer(req.headers['authorization']);
-      if (provided == null || provided.isEmpty || provided != expectedToken) {
+      if (provided == null ||
+          provided.isEmpty ||
+          !constantTimeEquals(provided, expectedToken)) {
         authLog.warning(
           'auth_fail method=${req.method} path=$path origin=${req.headers['origin'] ?? '-'}',
         );
