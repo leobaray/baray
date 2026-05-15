@@ -259,6 +259,9 @@ Router clientesRouter(Db db) {
         db.raw.execute('UPDATE clientes SET ${sets.join(', ')} WHERE id = ?', args);
       }
 
+      // B-02: rename do cliente propaga para o denormalizado `cliente_nome`
+      // em pedidos vinculados (cliente_id = id). Pedidos com cliente_id NULL
+      // (cliente apagado) preservam o snapshot — comportamento intencional.
       if (body.containsKey('nome')) {
         db.raw.execute(
           'UPDATE pedidos SET cliente_nome = ? WHERE cliente_id = ?',
