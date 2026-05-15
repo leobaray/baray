@@ -74,19 +74,43 @@ Router clientesRouter(Db db) {
     };
     sql.write(' ORDER BY $ordemSql');
 
-    final rows = db.raw.select(sql.toString(), args);
+    // M-07: paginação defensiva (limit=200 default, max=1000). Body permanece
+    // array; total filtrado vai em X-Total-Count. v1 = offset-based; cursor
+    // fica para follow-up. NB: o filtro `com_debito` é aplicado em-memória
+    // após o LIMIT, então o total reportado é antes do filtro pós-SQL — é o
+    // melhor disponível sem mover `com_debito` para o WHERE (que exigiria
+    // refator do agregado). Documentado.
+    final limite = _parseLimit(qp['limit']);
+    final offset = _parseOffset(qp['offset']);
+
+    final whereSqlCount = where.isNotEmpty ? ' WHERE ${where.join(' AND ')}' : '';
+    final totalRow = db.raw.select(
+      'SELECT COUNT(*) AS n FROM clientes c$whereSqlCount',
+      args,
+    );
+    final total = (totalRow.first['n'] as num).toInt();
+
+    sql.write(' LIMIT ? OFFSET ?');
+    final rows = db.raw.select(sql.toString(), [...args, limite, offset]);
     final filtrado = comDebito
         ? rows.where((r) => ehMaiorQueZero((r['valor_devendo'] as num).toDouble()))
         : rows;
-    return json(filtrado.map((row) {
-      final c = Cliente.fromRow(row);
-      return {
-        ...c.toJson(),
-        'total_pedidos': row['total_pedidos'],
-        'total_gasto': (row['total_gasto'] as num).toDouble(),
-        'valor_devendo': (row['valor_devendo'] as num).toDouble(),
-      };
-    }).toList());
+    return Response(
+      200,
+      body: jsonEncode(filtrado.map((row) {
+        final c = Cliente.fromRow(row);
+        return {
+          ...c.toJson(),
+          'total_pedidos': row['total_pedidos'],
+          'total_gasto': (row['total_gasto'] as num).toDouble(),
+          'valor_devendo': (row['valor_devendo'] as num).toDouble(),
+        };
+      }).toList()),
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'x-total-count': '$total',
+      },
+    );
   });
 
   r.get('/<id>', (Request req, String id) {
@@ -417,4 +441,23 @@ Router clientesRouter(Db db) {
   });
 
   return r;
+}
+
+// M-07: paginação defensiva. Valores inválidos caem em defaults silenciosos
+// (não 400) para máxima compatibilidade com clients antigos.
+const int _kDefaultLimit = 200;
+const int _kMaxLimit = 1000;
+
+int _parseLimit(String? raw) {
+  if (raw == null || raw.isEmpty) return _kDefaultLimit;
+  final n = int.tryParse(raw);
+  if (n == null || n <= 0) return _kDefaultLimit;
+  return n > _kMaxLimit ? _kMaxLimit : n;
+}
+
+int _parseOffset(String? raw) {
+  if (raw == null || raw.isEmpty) return 0;
+  final n = int.tryParse(raw);
+  if (n == null || n < 0) return 0;
+  return n;
 }

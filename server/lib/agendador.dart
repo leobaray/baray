@@ -93,6 +93,10 @@ class Agendador {
     return distribuicao.first.key;
   }
 
+  // M-07: full-scan intencional. Agendamento precisa do estado de ocupação
+  // global por dia para alocar parcelas — qualquer LIMIT distorceria o
+  // resultado. Mitigação: criar índice em `pedido_distribuicao.data` e
+  // agregar via SQL se o volume crescer (follow-up).
   Map<String, double> _ocupacaoPorDia(String? excluirPedidoId) {
     final resultado = <String, double>{};
 

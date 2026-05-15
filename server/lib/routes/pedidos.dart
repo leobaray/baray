@@ -85,8 +85,30 @@ Router pedidosRouter(Db db) {
     };
     sql.write(' ORDER BY $ordem');
 
-    final rows = db.raw.select(sql.toString(), args);
-    return json(rows.map((row) => Pedido.fromRow(row).toJson()).toList());
+    // M-07: paginação defensiva. limit=200 default, capped em 1000.
+    // Body permanece array (contrato do app preservado); total filtrado vai
+    // no header X-Total-Count para clients que precisarem paginar.
+    // v1 usa offset-based; cursor-based fica como follow-up se a base crescer.
+    final limite = _parseLimit(qp['limit']);
+    final offset = _parseOffset(qp['offset']);
+
+    final whereSql = where.isNotEmpty ? ' WHERE ${where.join(' AND ')}' : '';
+    final totalRow = db.raw.select(
+      'SELECT COUNT(*) AS n FROM pedidos$whereSql',
+      args,
+    );
+    final total = (totalRow.first['n'] as num).toInt();
+
+    sql.write(' LIMIT ? OFFSET ?');
+    final rows = db.raw.select(sql.toString(), [...args, limite, offset]);
+    return Response(
+      200,
+      body: jsonEncode(rows.map((row) => Pedido.fromRow(row).toJson()).toList()),
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'x-total-count': '$total',
+      },
+    );
   });
 
   // ── Detalhe ────────────────────────────────────────────────────────────
@@ -510,6 +532,25 @@ String _formatarData(DateTime d) {
   return '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+}
+
+// M-07: paginação defensiva. Valores inválidos caem em defaults silenciosos
+// (não 400) para máxima compatibilidade com clients antigos.
+const int _kDefaultLimit = 200;
+const int _kMaxLimit = 1000;
+
+int _parseLimit(String? raw) {
+  if (raw == null || raw.isEmpty) return _kDefaultLimit;
+  final n = int.tryParse(raw);
+  if (n == null || n <= 0) return _kDefaultLimit;
+  return n > _kMaxLimit ? _kMaxLimit : n;
+}
+
+int _parseOffset(String? raw) {
+  if (raw == null || raw.isEmpty) return 0;
+  final n = int.tryParse(raw);
+  if (n == null || n < 0) return 0;
+  return n;
 }
 
 /// Erro lançado dentro da transação pra disparar rollback + retorno 400.
