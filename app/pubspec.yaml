@@ -38,6 +38,9 @@ dependencies:
   flutter_riverpod: ^3.3.1
   go_router: ^17.2.3
   shared_preferences: ^2.5.5
+  # Storage criptografado (Keystore/Keychain) — usado para o API token (C-02).
+  # SharedPreferences fica para preferências não-sensíveis (URL, tema, etc.).
+  flutter_secure_storage: ^10.2.0
   intl: ^0.20.2
   shimmer: ^3.0.0
   google_fonts: ^8.1.0
@@ -47,6 +50,11 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Necessário para o test em-memória de FlutterSecureStorage (C-02).
+  # O package_interface já é trazido transitivamente por flutter_secure_storage,
+  # mas declarar aqui satisfaz o lint depend_on_referenced_packages.
+  flutter_secure_storage_platform_interface: ^2.0.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

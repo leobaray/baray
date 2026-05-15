@@ -1,13 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- usesCleartextTraffic=true é deliberado: o servidor Baray roda em LAN
-         interna (http://10.x.x.x). Em produção fora de LAN, mover para HTTPS
-         e usar networkSecurityConfig. -->
+    <!-- Política de cleartext: em release, cleartext está desligado por padrão
+         (network_security_config). Em debug, o override re-habilita pra dev.
+         Para usar em LAN sem TLS, edite res/xml/network_security_config.xml e
+         liste o host como <domain> em domain-config (ver comentários no XML). -->
     <application
         android:label="Baray"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

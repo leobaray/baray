@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network security config — Baray (resolve C-02 parte (a))
+
+    Política em release:
+      * base-config: cleartext DESLIGADO. Qualquer http:// não-whitelisted falha.
+      * debug-overrides: cleartext LIGADO para builds de dev (flutter run).
+        Isso preserva o workflow dev contra `http://10.x.x.x` na LAN da equipe
+        sem expor o release a cleartext arbitrário.
+
+    Em release, o jeito correto é colocar um reverse-proxy (Caddy/Nginx) com
+    cert TLS na LAN e usar `https://baray.local` ou similar — esse upgrade
+    para TLS-na-LAN fica como follow-up explicito (fora do escopo deste fix).
+
+    Se uma instalação específica ainda precisa de cleartext em release para
+    um host LAN conhecido (transição), adicione uma entrada literal aqui:
+
+        <domain-config cleartextTrafficPermitted="true">
+            <domain includeSubdomains="false">10.0.0.42</domain>
+        </domain-config>
+
+    O Android NSC NÃO suporta CIDR / prefixo de IP — cada host precisa ser
+    listado por valor literal. Isso é deliberado: o admin precisa pensar
+    antes de habilitar cleartext em produção.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <debug-overrides>
+        <base-config cleartextTrafficPermitted="true" />
+    </debug-overrides>
+</network-security-config>

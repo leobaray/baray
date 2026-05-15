@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,7 +23,26 @@ const String defaultServerUrl = String.fromEnvironment(
 );
 
 const String prefsKeyServerUrl = 'server_url';
+
+/// Chave legada do token em SharedPreferences. Mantida apenas para migração
+/// one-shot — o valor canônico vive em [secureKeyApiToken] (C-02).
 const String prefsKeyApiToken = 'api_token';
+
+/// Chave do token na storage criptografada (Keystore/Keychain).
+const String secureKeyApiToken = 'api_token';
+
+/// Storage criptografado para o API token. Em Android usa cipher moderno do
+/// flutter_secure_storage (RSA-OAEP + AES-GCM, chaves em Keystore); em iOS,
+/// Keychain. Em desktop/web cai num backend platform-específico.
+FlutterSecureStorage _apiTokenStorage = const FlutterSecureStorage();
+
+/// Apenas para testes: substitui o storage por uma instância mockada e
+/// devolve o anterior para restauração simétrica. Não chamar em produção.
+FlutterSecureStorage debugSetApiTokenStorage(FlutterSecureStorage storage) {
+  final previous = _apiTokenStorage;
+  _apiTokenStorage = storage;
+  return previous;
+}
 
 class ServerHealth {
   final bool online;
@@ -329,12 +349,38 @@ Future<void> saveServerUrl(String url) async {
   await prefs.setString(prefsKeyServerUrl, url);
 }
 
+/// Lê o API token. Faz migração one-shot do storage legado (SharedPreferences,
+/// plaintext em XML não-criptografado) para [_apiTokenStorage] (Keystore no
+/// Android, Keychain no iOS) — C-02. Após a migração, o valor antigo é apagado.
 Future<String> loadApiToken() async {
+  final secure = await _apiTokenStorage.read(key: secureKeyApiToken);
+  if (secure != null && secure.isNotEmpty) {
+    return secure;
+  }
+
+  // Migration path: se já existe um token salvo no storage legado,
+  // copia para o storage criptografado e remove do legado.
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getString(prefsKeyApiToken) ?? '';
+  final legacy = prefs.getString(prefsKeyApiToken);
+  if (legacy != null && legacy.isNotEmpty) {
+    await _apiTokenStorage.write(key: secureKeyApiToken, value: legacy);
+    await prefs.remove(prefsKeyApiToken);
+    return legacy;
+  }
+
+  return '';
 }
 
+/// Persiste o token no storage criptografado. Também limpa qualquer cópia
+/// legada em SharedPreferences (defesa em profundidade contra rollback parcial).
 Future<void> saveApiToken(String token) async {
+  if (token.isEmpty) {
+    await _apiTokenStorage.delete(key: secureKeyApiToken);
+  } else {
+    await _apiTokenStorage.write(key: secureKeyApiToken, value: token);
+  }
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(prefsKeyApiToken, token);
+  if (prefs.containsKey(prefsKeyApiToken)) {
+    await prefs.remove(prefsKeyApiToken);
+  }
 }
