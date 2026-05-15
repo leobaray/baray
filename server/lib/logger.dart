@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:logging/logging.dart';
 
 final Logger appLog = Logger('baray');
@@ -7,7 +9,7 @@ final Logger agendaLog = Logger('baray.agenda');
 final Logger authLog = Logger('baray.auth');
 
 void setupLogging() {
-  final levelName = (const String.fromEnvironment('LOG_LEVEL')).toUpperCase();
+  final levelName = (Platform.environment['LOG_LEVEL'] ?? 'INFO').toUpperCase();
   Logger.root.level = switch (levelName) {
     'SEVERE' => Level.SEVERE,
     'WARNING' => Level.WARNING,
