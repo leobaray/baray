@@ -5,6 +5,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../db.dart';
+import '../dinheiro.dart';
 import '../models/pagamento.dart';
 import '../pagamentos_util.dart';
 
@@ -50,7 +51,7 @@ Router pagamentosRouter(Db db) {
     final pedidoPago = ((pedidoRows.first['valor_pago'] as num?) ?? 0).toDouble();
     final fechamentoId = pedidoRows.first['fechamento_id'] as String?;
     final saldo = pedidoValor - pedidoPago;
-    if (valor > saldo + 0.01) {
+    if (valor > saldo + kTolerancaCentavos) {
       return json({
         'error': 'valor (R\$ ${valor.toStringAsFixed(2)}) excede o saldo devedor (R\$ ${saldo.toStringAsFixed(2)})',
       }, status: 400);

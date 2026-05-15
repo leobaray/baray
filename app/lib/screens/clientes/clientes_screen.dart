@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../models/cliente.dart';
 import '../../state/clientes_provider.dart';
 import '../../theme/breakpoints.dart';
+import '../../util/dinheiro.dart';
 import '../../util/formatters.dart';
 import '../../widgets/cliente_detalhe_view.dart';
 import '../../widgets/cliente_row.dart';
@@ -379,7 +380,7 @@ class _ResumoBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final moeda = AppFormatters.moedaInteira;
-    final comDebito = clientes.where((c) => c.valorDevendo > 0.01).length;
+    final comDebito = clientes.where((c) => ehMaiorQueZero(c.valorDevendo)).length;
     final totalDebito = clientes.fold<double>(0, (s, c) => s + c.valorDevendo);
 
     final resumoTexto = [

@@ -14,6 +14,7 @@ import '../state/dashboard_provider.dart';
 import '../state/pedidos_provider.dart';
 import '../theme/density.dart';
 import '../theme/spacing.dart';
+import '../util/dinheiro.dart';
 import '../util/formatters.dart';
 import 'empty_state.dart';
 import 'fechamento_status_badge.dart';
@@ -322,7 +323,7 @@ class _StatsStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final f = cliente.fechamentoAtual;
-    final temDebito = cliente.valorDevendo > 0.01;
+    final temDebito = ehMaiorQueZero(cliente.valorDevendo);
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -684,7 +685,7 @@ class _PedidosResumo extends StatelessWidget {
             _Metric(label: 'pedidos', valor: '${pedidos.length}', color: cs.onSurface),
             const SizedBox(width: 16),
             _Metric(label: 'total', valor: moeda.format(total), color: cs.onSurface),
-            if (devendo > 0.01) ...[
+            if (ehMaiorQueZero(devendo)) ...[
               const SizedBox(width: 16),
               _Metric(label: 'devendo', valor: moeda.format(devendo), color: cs.error),
             ],
@@ -936,7 +937,7 @@ class _FechamentosTab extends ConsumerWidget {
                             ),
                           ),
                         ),
-                        if (f.valorPendente > 0.01)
+                        if (ehMaiorQueZero(f.valorPendente))
                           Text(
                             'saldo ${moeda.format(f.valorPendente)}',
                             style: TextStyle(

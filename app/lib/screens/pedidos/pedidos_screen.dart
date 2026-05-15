@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../models/pedido.dart';
 import '../../state/pedidos_provider.dart';
+import '../../util/dinheiro.dart';
 import '../../util/formatters.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/list_skeleton.dart';
@@ -502,7 +503,7 @@ class _ResumoBanner extends StatelessWidget {
     final resumoTexto = [
       '${pedidos.length} pedidos',
       'total ${moeda.format(total)}',
-      if (devendo > 0.01) 'devendo ${moeda.format(devendo)}',
+      if (ehMaiorQueZero(devendo)) 'devendo ${moeda.format(devendo)}',
       if (urgentes > 0) '$urgentes urgentes',
     ].join(', ');
 
@@ -529,7 +530,7 @@ class _ResumoBanner extends StatelessWidget {
               valor: moeda.format(total),
               color: cs.onSurface,
             ),
-            if (devendo > 0.01) ...[
+            if (ehMaiorQueZero(devendo)) ...[
               const SizedBox(width: 16),
               _Metric(
                 label: 'devendo',

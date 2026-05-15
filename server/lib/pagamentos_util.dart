@@ -1,7 +1,10 @@
 import 'package:sqlite3/sqlite3.dart';
 
+import 'dinheiro.dart';
+
 /// Recalcula `valor_pago` (cache derivado de `pedido_pagamentos`) e ajusta
-/// `status_pagamento`. Aceita uma tolerância de R\$ 0,01 para arredondamentos.
+/// `status_pagamento`. Aceita uma tolerância de [kTolerancaCentavos] para
+/// arredondamentos (ver AUDIT A-04 e `dinheiro.dart`).
 void recalcularPagamento(Database raw, String pedidoId) {
   final pedidoRows = raw.select('SELECT valor FROM pedidos WHERE id=?', [pedidoId]);
   if (pedidoRows.isEmpty) return;
@@ -14,9 +17,9 @@ void recalcularPagamento(Database raw, String pedidoId) {
   final pago = (somaRow['s'] as num).toDouble();
 
   final String status;
-  if (pago >= valorTotal - 0.01) {
+  if (pago >= valorTotal - kTolerancaCentavos) {
     status = 'pago';
-  } else if (pago > 0.01) {
+  } else if (ehMaiorQueZero(pago)) {
     status = 'parcial';
   } else {
     status = 'devendo';

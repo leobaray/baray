@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/cliente.dart';
 import '../theme/density.dart';
 import '../theme/spacing.dart';
+import '../util/dinheiro.dart';
 import '../util/formatters.dart';
 
 /// Linha densa de cliente — usada na lista master do split desktop e na
@@ -38,7 +39,7 @@ class ClienteRow extends StatelessWidget {
       bg = cs.surface;
     }
 
-    final temDebito = cliente.valorDevendo > 0.01;
+    final temDebito = ehMaiorQueZero(cliente.valorDevendo);
 
     return Material(
       color: bg,

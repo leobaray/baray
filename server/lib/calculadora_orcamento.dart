@@ -1,4 +1,5 @@
 import 'db.dart';
+import 'dinheiro.dart';
 
 /// Calculadora de orçamento — aplica regras das configurações.
 class CalculadoraOrcamento {
@@ -62,11 +63,14 @@ class CalculadoraOrcamento {
       'tipo_peca': tipoPeca,
       'preco_primeira_cor': precoPrimeira,
       'preco_demais_cores': precoDemais,
-      'preco_por_peca': double.parse(porPeca.toStringAsFixed(2)),
-      'subtotal': double.parse(subtotal.toStringAsFixed(2)),
+      // Bankers rounding (half-even) — ver AUDIT A-04 / dinheiro.dart.
+      // Substitui o `toStringAsFixed(2)` que usa half-away-from-zero e
+      // tende a inflar somatórios em sequências de arredondamentos.
+      'preco_por_peca': arredondarCentavos(porPeca),
+      'subtotal': arredondarCentavos(subtotal),
       'matriz_cobrada': cobrarMatriz,
       'valor_matriz': totalMatriz,
-      'total': double.parse(total.toStringAsFixed(2)),
+      'total': arredondarCentavos(total),
     };
   }
 

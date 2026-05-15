@@ -5,6 +5,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../db.dart';
+import '../dinheiro.dart';
 import '../fechamentos_util.dart';
 import '../models/cliente.dart';
 import '../models/cliente_fechamento.dart';
@@ -75,7 +76,7 @@ Router clientesRouter(Db db) {
 
     final rows = db.raw.select(sql.toString(), args);
     final filtrado = comDebito
-        ? rows.where((r) => (r['valor_devendo'] as num).toDouble() > 0.01)
+        ? rows.where((r) => ehMaiorQueZero((r['valor_devendo'] as num).toDouble()))
         : rows;
     return json(filtrado.map((row) {
       final c = Cliente.fromRow(row);
