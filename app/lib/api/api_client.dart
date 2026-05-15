@@ -336,7 +336,14 @@ final apiTokenProvider = StateProvider<String>((ref) => '');
 final apiClientProvider = Provider<ApiClient>((ref) {
   final url = ref.watch(serverUrlProvider);
   final token = ref.watch(apiTokenProvider);
-  return ApiClient(url, apiToken: token);
+  final client = ApiClient(url, apiToken: token);
+  // Quando serverUrlProvider/apiTokenProvider mudarem, Riverpod descarta este
+  // provider e cria um novo. Sem o close abaixo, o Dio antigo retém o pool de
+  // conexões HTTP/2, listeners de DNS e file descriptors até o GC passar — em
+  // hot-reload dezenas de instances acumulam, e em rotação de token requests
+  // in-flight do Dio antigo ainda viajariam com a credencial antiga (A-05).
+  ref.onDispose(() => client.dio.close());
+  return client;
 });
 
 Future<String> loadServerUrl() async {
