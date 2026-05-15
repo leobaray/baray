@@ -35,22 +35,31 @@ Router dashboardRouter(Db db) {
     final fimMes = DateTime(hoje.year, hoje.month + 1, 0);
     final fimMesStr = _dataStr(fimMes);
 
+    // A-01: `criado_em`, `quando`, `entregue_em` são gravados em UTC ISO8601
+    // (DateTime.now().toUtc().toIso8601String()) — ver pedidos.dart:129,290,398
+    // e pagamentos.dart:60. O filtro do mês precisa ser o instante UTC
+    // correspondente ao início do mês em fuso local. Senão, pedidos criados
+    // perto da meia-noite local viram ".Z" do dia seguinte (UTC) e são
+    // contados no mês errado. inicioMesStr (YYYY-MM-DD) continua usado na
+    // resposta e nos campos puramente data (data_producao etc).
+    final inicioMesUtcIso = inicioMesUtcDe(inicioMes);
+
     final vendasRow = db.raw.select(
       'SELECT COALESCE(SUM(valor), 0) AS s, COUNT(*) AS n FROM pedidos WHERE criado_em >= ?',
-      [inicioMesStr],
+      [inicioMesUtcIso],
     ).first;
     final vendasMes = (vendasRow['s'] as num).toDouble();
     final pedidosMes = vendasRow['n'] as int;
 
     final recebidoRow = db.raw.select(
       'SELECT COALESCE(SUM(valor), 0) AS s FROM pedido_pagamentos WHERE quando >= ?',
-      [inicioMesStr],
+      [inicioMesUtcIso],
     ).first;
     final recebidoMes = (recebidoRow['s'] as num).toDouble();
 
     final concluidosRow = db.raw.select(
       'SELECT COUNT(*) AS n FROM pedidos WHERE entregue_em >= ?',
-      [inicioMesStr],
+      [inicioMesUtcIso],
     ).first;
     final concluidosMes = concluidosRow['n'] as int;
 
@@ -118,4 +127,14 @@ String _dataStr(DateTime d) {
   return '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+}
+
+/// Converte uma data local "início do mês" (meia-noite local do dia 1) para
+/// o instante UTC equivalente em ISO8601. Usado pra alinhar os filtros do
+/// dashboard com timestamps gravados em UTC. Em BRT (UTC-3), por exemplo,
+/// `DateTime(2026, 5, 1)` → `'2026-05-01T03:00:00.000Z'`. Em fuso UTC
+/// (servidor configurado em UTC), volta `'2026-05-01T00:00:00.000Z'`.
+/// Exposta (sem underscore) pra cobertura em testes.
+String inicioMesUtcDe(DateTime inicioMesLocal) {
+  return inicioMesLocal.toUtc().toIso8601String();
 }
