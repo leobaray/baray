@@ -27,7 +27,10 @@ double arredondarCentavos(double valor) {
   final escalado = valor * 100;
   final inteiro = escalado.truncateToDouble();
   final frac = escalado - inteiro;
-  const epsilon = 1e-9;
+  // Re-audit (Fase 5 #3): 1e-9 era grande demais — entradas reais com erro
+  // IEEE754 acumulado podiam cair em half-even quando deveriam half-up.
+  // 1e-12 ≈ 10x o erro de uma multiplicação por 100 em double.
+  const epsilon = 1e-12;
   int cents;
   if (valor >= 0) {
     if ((frac - 0.5).abs() < epsilon) {

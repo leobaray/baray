@@ -22,6 +22,19 @@ void main() {
       expect(arredondarCentavos(-1.234), -1.23);
       expect(arredondarCentavos(-0.125), -0.12);
     });
+
+    // Re-audit (Fase 5 #3 / A-04 retry): epsilon apertado de 1e-9 → 1e-12.
+    // Valores pequenos que caem exatamente em x.5 após `*100` continuam
+    // sendo tratados como tie (banker's correto). A diferença é que drifts
+    // genuínos > 1e-12 não recebem mais tratamento de tie indevidamente.
+    test('valores pequenos nos limites de centavo', () {
+      // 0.005 → tie → 0 é par → 0.00
+      expect(arredondarCentavos(0.005), 0.00);
+      // 0.105 → tie → 10 é par → 0.10
+      expect(arredondarCentavos(0.105), 0.10);
+      // 0.115 → tie → 11 é ímpar → 12 → 0.12
+      expect(arredondarCentavos(0.115), 0.12);
+    });
   });
 
   group('ehMaiorQueZero / igualEmCentavos', () {

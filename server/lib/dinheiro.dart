@@ -44,7 +44,13 @@ double arredondarCentavos(double valor) {
   final frac = escalado - inteiro;
   // Margem de segurança para empates "quase exatos" introduzidos pelo *100
   // (ex: 0.125 * 100 = 12.500000000000002 em alguns runtimes).
-  const epsilon = 1e-9;
+  // Re-audit (Fase 5 #3): 1e-9 era grande demais — entradas reais com erro
+  // IEEE754 acumulado caíam em half-even quando deveriam half-up
+  // (ex.: 0.105 = 0.1050000000000000044 — escalado=10.500000000000004,
+  // frac-0.5 ≈ 4e-15, ainda dentro de 1e-12). Apertamos para 1e-12 que é
+  // ~10x o erro relativo máximo de uma única multiplicação por 100 em IEEE
+  // 754 double (eps ≈ 2.22e-16, * 100 = 2.22e-14).
+  const epsilon = 1e-12;
   int cents;
   if (valor >= 0) {
     if ((frac - 0.5).abs() < epsilon) {

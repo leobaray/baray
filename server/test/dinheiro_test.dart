@@ -53,6 +53,41 @@ void main() {
       expect(arredondarCentavos(double.negativeInfinity),
           double.negativeInfinity);
     });
+
+    // Re-audit (Fase 5 #3 / A-04 retry): com epsilon=1e-9, valores pequenos
+    // como 0.105/0.115/0.005 cujo escalado * 100 cai exatamente em x.5
+    // (sem drift IEEE754) eram tratados como tie e iam pra par. Isso ainda
+    // é o esperado para banker's rounding (half-to-even). O risco do
+    // epsilon antigo era diferente: drift de até ~5e-10 era classificado
+    // como tie quando não era. Com 1e-12, só drifts genuínos abaixo do
+    // erro de `*100` (eps*100 ≈ 2.22e-14) caem como tie.
+    test('valores nos limites de centavo (small edge) banker correto', () {
+      // 0.005 → escalado=0.5 exato → tie → 0 é par → 0.00
+      expect(arredondarCentavos(0.005), 0.00);
+      // 0.015 → escalado=1.5 exato → tie → 1 é ímpar → vai pra 2 → 0.02
+      expect(arredondarCentavos(0.015), 0.02);
+      // 0.105 → escalado=10.5 exato → tie → 10 é par → 0.10
+      expect(arredondarCentavos(0.105), 0.10);
+      // 0.115 → escalado=11.5 exato → tie → 11 é ímpar → 12 → 0.12
+      expect(arredondarCentavos(0.115), 0.12);
+    });
+
+    test(
+        'epsilon apertado: drift real de IEEE754 não cai mais em tie falso',
+        () {
+      // 2.425 * 100 = 242.49999999999997 no Dart x64. |frac-0.5| ≈ 2.84e-14.
+      // Com epsilon=1e-12 isso AINDA é tie (2.84e-14 < 1e-12) → banker.
+      // O ponto-chave é o oposto: valores com drift > 1e-12 (acumulados em
+      // chains de pcts) não recebem mais o tratamento de tie. Esse caso
+      // confirma que o tratamento de tie continua funcionando para
+      // drifts genuinamente próximos do empate.
+      expect(arredondarCentavos(2.425), 2.42);
+
+      // Valor com drift maior que epsilon: 0.005 + 1e-10 não é mais tie
+      // (1e-8 em escalado > 1e-12) → half-up natural via `frac > 0.5`.
+      expect(arredondarCentavos(0.005 + 1e-10), 0.01,
+          reason: 'drift > epsilon cai em half-up, não em tie pra par');
+    });
   });
 
   group('igualEmCentavos', () {
