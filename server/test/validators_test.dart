@@ -77,6 +77,66 @@ void main() {
       );
     });
 
+    test("forma_entrega='retirada' aceito (UI envia substantivo — resolve C-01)", () {
+      expect(
+        validarPedido(
+          {
+            'cliente_nome': 'X',
+            'descricao': 'd',
+            'valor': 10,
+            'forma_entrega': 'retirada',
+          },
+          criar: true,
+        ),
+        isNull,
+      );
+    });
+
+    test("forma_entrega='entrega' aceito (UI envia substantivo — resolve C-01)", () {
+      expect(
+        validarPedido(
+          {
+            'cliente_nome': 'X',
+            'descricao': 'd',
+            'valor': 10,
+            'forma_entrega': 'entrega',
+          },
+          criar: true,
+        ),
+        isNull,
+      );
+    });
+
+    test("forma_entrega='retirar' continua aceito (compat com dados legados)", () {
+      expect(
+        validarPedido(
+          {
+            'cliente_nome': 'X',
+            'descricao': 'd',
+            'valor': 10,
+            'forma_entrega': 'retirar',
+          },
+          criar: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('forma_entrega inválido rejeitado', () {
+      expect(
+        validarPedido(
+          {
+            'cliente_nome': 'X',
+            'descricao': 'd',
+            'valor': 10,
+            'forma_entrega': 'banana',
+          },
+          criar: true,
+        ),
+        contains('forma_entrega'),
+      );
+    });
+
     test('payload válido completo passa', () {
       expect(
         validarPedido(

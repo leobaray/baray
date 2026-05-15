@@ -41,7 +41,16 @@ const Set<String> tiposPecaValidos = {
   'outro',
 };
 
-const Set<String> formasEntregaValidas = {'retirar', 'entregar', 'correios'};
+// Aceita tanto os substantivos enviados pela UI atual ('retirada','entrega')
+// quanto os verbos legados ('retirar','entregar','correios') que podem existir
+// em registros antigos no banco. Mantém backward-compat sem migração de dados.
+const Set<String> formasEntregaValidas = {
+  'retirada',
+  'entrega',
+  'retirar',
+  'entregar',
+  'correios',
+};
 
 const Set<String> fechamentoTiposValidos = {
   'semanal',
