@@ -244,8 +244,9 @@ Router pedidosRouter(Db db) {
 
   // ── Atualizar ──────────────────────────────────────────────────────────
   r.put('/<id>', (Request req, String id) async {
-    final exists = db.raw.select('SELECT id FROM pedidos WHERE id = ?', [id]);
+    final exists = db.raw.select('SELECT id, status FROM pedidos WHERE id = ?', [id]);
     if (exists.isEmpty) return json({'error': 'pedido não encontrado'}, status: 404);
+    final statusAtual = exists.first['status'] as String?;
 
     final Map<String, dynamic> body;
     try {
@@ -254,7 +255,7 @@ Router pedidosRouter(Db db) {
       return json({'error': 'body inválido'}, status: 400);
     }
 
-    final erro = validarPedido(body, criar: false);
+    final erro = validarPedido(body, criar: false, statusAtual: statusAtual);
     if (erro != null) return json({'error': erro}, status: 400);
 
     // Campos editáveis — valor_pago removido (C-03); só muda via /pagamentos.

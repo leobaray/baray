@@ -97,6 +97,61 @@ void main() {
       );
     });
 
+    test("status='entregue' rejeitado na criação (resolve M-04)", () {
+      // Cenário do finding: cliente cria pedido já com status='entregue'
+      // → estado fantasma (entregue sem entregue_em). Fluxo correto é via
+      // POST /pedidos/<id>/saida que setea entregue_em atomicamente.
+      expect(
+        validarPedido(
+          {'cliente_nome': 'X', 'descricao': 'd', 'valor': 10, 'status': 'entregue'},
+          criar: true,
+        ),
+        contains('status'),
+      );
+    });
+
+    test("status='concluido' rejeitado na criação (resolve M-04)", () {
+      expect(
+        validarPedido(
+          {'cliente_nome': 'X', 'descricao': 'd', 'valor': 10, 'status': 'concluido'},
+          criar: true,
+        ),
+        contains('status'),
+      );
+    });
+
+    test("status='producao' rejeitado na criação (resolve M-04)", () {
+      expect(
+        validarPedido(
+          {'cliente_nome': 'X', 'descricao': 'd', 'valor': 10, 'status': 'producao'},
+          criar: true,
+        ),
+        contains('status'),
+      );
+    });
+
+    test("status='pendente' aceito na criação", () {
+      expect(
+        validarPedido(
+          {'cliente_nome': 'X', 'descricao': 'd', 'valor': 10, 'status': 'pendente'},
+          criar: true,
+        ),
+        isNull,
+      );
+    });
+
+    test("status='agendado' aceito na criação", () {
+      // Agendado é válido na criação porque o agendador interno seta esse
+      // status logo após o INSERT (bypassa o validator via UPDATE direto).
+      expect(
+        validarPedido(
+          {'cliente_nome': 'X', 'descricao': 'd', 'valor': 10, 'status': 'agendado'},
+          criar: true,
+        ),
+        isNull,
+      );
+    });
+
     test('valor_pago no body → erro (resolve C-03)', () {
       expect(
         validarPedido(
@@ -196,6 +251,106 @@ void main() {
 
     test('PUT com valor=0 falha', () {
       expect(validarPedido({'valor': 0}, criar: false), contains('valor'));
+    });
+
+    test('PUT sem mudança de status passa mesmo com statusAtual fornecido', () {
+      expect(
+        validarPedido({'valor': 50}, criar: false, statusAtual: 'producao'),
+        isNull,
+      );
+    });
+
+    test('PUT com status igual ao atual (no-op) passa', () {
+      expect(
+        validarPedido(
+          {'status': 'producao'},
+          criar: false,
+          statusAtual: 'producao',
+        ),
+        isNull,
+      );
+    });
+
+    test('transição pendente→agendado aceita', () {
+      expect(
+        validarPedido(
+          {'status': 'agendado'},
+          criar: false,
+          statusAtual: 'pendente',
+        ),
+        isNull,
+      );
+    });
+
+    test('transição pendente→producao aceita', () {
+      expect(
+        validarPedido(
+          {'status': 'producao'},
+          criar: false,
+          statusAtual: 'pendente',
+        ),
+        isNull,
+      );
+    });
+
+    test('transição agendado→producao aceita', () {
+      expect(
+        validarPedido(
+          {'status': 'producao'},
+          criar: false,
+          statusAtual: 'agendado',
+        ),
+        isNull,
+      );
+    });
+
+    test('transição producao→concluido aceita', () {
+      expect(
+        validarPedido(
+          {'status': 'concluido'},
+          criar: false,
+          statusAtual: 'producao',
+        ),
+        isNull,
+      );
+    });
+
+    test('transição concluido→pendente rejeitada (M-04)', () {
+      // Backward jump não-trivial: concluído já passou pela produção, voltar
+      // a pendente perde estado. Se precisar, refaça o pedido.
+      expect(
+        validarPedido(
+          {'status': 'pendente'},
+          criar: false,
+          statusAtual: 'concluido',
+        ),
+        contains('transição'),
+      );
+    });
+
+    test('transição entregue→qualquer rejeitada (terminal)', () {
+      // Entregue é terminal: pedido entregue não pode voltar pra fluxo.
+      expect(
+        validarPedido(
+          {'status': 'producao'},
+          criar: false,
+          statusAtual: 'entregue',
+        ),
+        contains('transição'),
+      );
+    });
+
+    test('transição pendente→entregue rejeitada (deve ir via /saida)', () {
+      // Pular direto pra entregue cria estado fantasma — entregue_em não
+      // é setado via PUT. Fluxo correto: POST /pedidos/<id>/saida.
+      expect(
+        validarPedido(
+          {'status': 'entregue'},
+          criar: false,
+          statusAtual: 'pendente',
+        ),
+        contains('transição'),
+      );
     });
   });
 

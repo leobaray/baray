@@ -17,6 +17,36 @@ const Set<String> statusValidos = {
   'entregue',
 };
 
+/// Subconjunto de `statusValidos` aceito na criação (`POST /pedidos`).
+///
+/// M-04: criar um pedido já como `entregue`/`concluido`/`producao` cria estado
+/// inconsistente — `entregue_em` fica NULL, dashboard não conta, mas o Kanban
+/// mostra. O fluxo correto é: criar como `pendente` (ou `agendado` se o
+/// agendador interno já vai assumir) e progredir via PUT/`/saida`.
+const Set<String> statusValidosNaCriacao = {
+  'pendente',
+  'agendado',
+};
+
+/// Máquina de estados: para cada status atual, conjunto de status válidos
+/// como destino via `PUT /pedidos/{id}`.
+///
+/// Notas:
+///   - `entregue` é terminal — não há transições saindo (use rollback manual
+///     via SQL ou DELETE+POST se realmente precisar; UI não deve oferecer).
+///   - Transição para `entregue` NÃO é permitida via PUT — força uso de
+///     `POST /pedidos/{id}/saida` que setea `entregue_em` atomicamente.
+///   - Transições "para trás" (ex: producao→agendado) são permitidas pra
+///     desfazer erros de operador. concluido→pendente é rejeitada (perde
+///     estado de produção; refaça o pedido).
+const Map<String, Set<String>> transicoesValidasStatus = {
+  'pendente': {'agendado', 'producao'},
+  'agendado': {'pendente', 'producao'},
+  'producao': {'agendado', 'concluido'},
+  'concluido': {'producao'},
+  'entregue': <String>{},
+};
+
 const Set<String> statusPagamentoValidos = {'devendo', 'parcial', 'pago'};
 
 const Set<String> formasPagamentoValidas = {
@@ -62,7 +92,16 @@ const Set<String> fechamentoTiposValidos = {
 /// Validação dos campos comuns a POST e PUT de pedidos. `criar=true` força
 /// presença dos campos obrigatórios; `criar=false` aceita ausência (PUT é
 /// parcial) mas valida os campos que estão presentes.
-String? validarPedido(Map<String, dynamic> body, {required bool criar}) {
+///
+/// [statusAtual] (apenas em `criar: false`): se fornecido e o body tenta
+/// mudar o `status`, valida a transição contra `transicoesValidasStatus`.
+/// Quando `null`, a checagem de transição é pulada (compat: chamadas que
+/// não passam o status atual mantêm o comportamento legado).
+String? validarPedido(
+  Map<String, dynamic> body, {
+  required bool criar,
+  String? statusAtual,
+}) {
   if (criar) {
     final nome = (body['cliente_nome'] as String?)?.trim();
     if (nome == null || nome.isEmpty) return 'cliente_nome é obrigatório';
@@ -109,6 +148,24 @@ String? validarPedido(Map<String, dynamic> body, {required bool criar}) {
       _validarEnum(body, 'tipo_peca', tiposPecaValidos) ??
       _validarEnum(body, 'forma_entrega', formasEntregaValidas);
   if (enumErro != null) return enumErro;
+
+  // M-04: state-machine semântica de status (depois da checagem do enum).
+  if (body.containsKey('status') && body['status'] != null) {
+    final novo = body['status'] as String;
+    if (criar) {
+      if (!statusValidosNaCriacao.contains(novo)) {
+        return 'status "$novo" não pode ser usado na criação '
+            '(use: ${statusValidosNaCriacao.join(", ")}; '
+            'demais estados são alcançados por transição/`/saida`)';
+      }
+    } else if (statusAtual != null && novo != statusAtual) {
+      final permitidos = transicoesValidasStatus[statusAtual] ?? const <String>{};
+      if (!permitidos.contains(novo)) {
+        return 'transição inválida: $statusAtual → $novo '
+            '(de "$statusAtual" só: ${permitidos.isEmpty ? "nenhuma — estado terminal" : permitidos.join(", ")})';
+      }
+    }
+  }
 
   return null;
 }
