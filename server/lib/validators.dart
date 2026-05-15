@@ -79,6 +79,10 @@ String? validarPedido(Map<String, dynamic> body, {required bool criar}) {
   if (body.containsKey('quantidade')) {
     final q = body['quantidade'];
     if (q != null && (q is! int || q <= 0)) return 'quantidade deve ser inteiro positivo';
+    // Defesa em profundidade (M-06): upper-bound evita DoS por SUM/cálculos
+    // absurdos quando o app é bypassado (BrlInputFormatter só roda no client).
+    // 100_000 unidades por linha já é absurdo no contexto de gráfica.
+    if (q is int && q > 100000) return 'quantidade não pode exceder 100000';
   }
 
   if (body.containsKey('arte_cores')) {

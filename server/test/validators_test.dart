@@ -47,6 +47,36 @@ void main() {
       );
     });
 
+    test('quantidade acima do limite → erro (resolve M-06)', () {
+      expect(
+        validarPedido(
+          {
+            'cliente_nome': 'X',
+            'descricao': 'd',
+            'valor': 10,
+            'quantidade': 100001,
+          },
+          criar: true,
+        ),
+        contains('quantidade'),
+      );
+    });
+
+    test('quantidade no limite (100000) aceita', () {
+      expect(
+        validarPedido(
+          {
+            'cliente_nome': 'X',
+            'descricao': 'd',
+            'valor': 10,
+            'quantidade': 100000,
+          },
+          criar: true,
+        ),
+        isNull,
+      );
+    });
+
     test('arte_cores=11 → erro (fora do range)', () {
       expect(
         validarPedido(
