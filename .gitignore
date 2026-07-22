@@ -1,0 +1,69 @@
+# ── Dart / Flutter ────────────────────────────────────────────────────────
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/doc/api/
+**/*.g.dart.lock
+
+# Server package build/lock (the service is not published)
+/server/pubspec.lock
+
+# Coverage
+coverage/
+**/coverage/
+*.lcov
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# ── Runtime data & secrets ────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+api_token
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.backup_*
+empresa.db*
+
+# Log files
+*.log
+app.log*
+
+# ── Android ───────────────────────────────────────────────────────────────
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+*.keystore
+*.jks
+
+# ── Windows desktop ───────────────────────────────────────────────────────
+**/windows/flutter/ephemeral/
+**/windows/**/x64/
+**/windows/**/Debug/
+**/windows/**/Release/
+
+# ── IDE / editor ──────────────────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+migrate_working_dir/
+
+# ── OS ────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
